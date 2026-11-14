@@ -1,0 +1,125 @@
+@import "tailwindcss";
+
+/* Design tokens from dynamic-island-spec.md, section 3.1 */
+:root {
+  /* Base */
+  --notch-bg: #09090b;
+  --notch-bg-hover: #0f0f12;
+  --notch-bg-opacity: 0.95;
+  --notch-surface: #18181b;
+  --notch-surface-hover: #27272a;
+
+  /* Border */
+  --notch-border: rgba(255, 255, 255, 0.08);
+  --notch-border-hover: rgba(255, 255, 255, 0.15);
+  --notch-border-active: rgba(255, 255, 255, 0.25);
+
+  /* Text */
+  --notch-text-primary: #fafafa;
+  --notch-text-secondary: rgba(255, 255, 255, 0.55);
+  --notch-text-tertiary: rgba(255, 255, 255, 0.35);
+  --notch-text-disabled: rgba(255, 255, 255, 0.2);
+
+  /* Accent */
+  --notch-accent-emerald: #34d399;
+  --notch-accent-cyan: #22d3ee;
+  --notch-accent-amber: #fbbf24;
+  --notch-accent-red: #ef4444;
+  --notch-accent-blue: #60a5fa;
+  --notch-accent-purple: #a78bfa;
+
+  /* Semantic */
+  --notch-success: var(--notch-accent-emerald);
+  --notch-warning: var(--notch-accent-amber);
+  --notch-error: var(--notch-accent-red);
+  --notch-info: var(--notch-accent-cyan);
+  --notch-charging: var(--notch-accent-amber);
+
+  /* Typography */
+  --notch-font-text: "Inter Variable", "Inter", system-ui, -apple-system, sans-serif;
+  --notch-font-mono: "JetBrains Mono Variable", "JetBrains Mono", "Cascadia Code", "Consolas",
+    monospace;
+  --notch-font-size-xs: 10px;
+  --notch-font-size-sm: 12px;
+  --notch-font-size-base: 13px;
+
+  /* Sizing: idle capsule */
+  --notch-idle-w: 180px;
+  --notch-idle-h: 32px;
+  --notch-idle-radius: 16px;
+}
+
+/* Expose the tokens as Tailwind utilities, e.g. `text-notch-secondary`, `font-mono`. */
+@theme inline {
+  --font-sans: var(--notch-font-text);
+  --font-mono: var(--notch-font-mono);
+
+  --color-notch-bg: var(--notch-bg);
+  --color-notch-surface: var(--notch-surface);
+  --color-notch-border: var(--notch-border);
+  --color-notch-border-hover: var(--notch-border-hover);
+  --color-notch-primary: var(--notch-text-primary);
+  --color-notch-secondary: var(--notch-text-secondary);
+  --color-notch-tertiary: var(--notch-text-tertiary);
+  --color-notch-charging: var(--notch-charging);
+  --color-notch-error: var(--notch-error);
+}
+
+/* The Tauri window is transparent: nothing but the capsule may paint. */
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+body {
+  font-family: var(--notch-font-text);
+  font-size: var(--notch-font-size-sm);
+  color: var(--notch-text-primary);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+/* Battery: slow pulse while charging, sharper blink when critically low. */
+@keyframes notch-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@keyframes notch-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.notch-pulse {
+  animation: notch-pulse 1s ease-in-out infinite;
+}
+
+.notch-blink {
+  animation: notch-blink 0.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notch-pulse,
+  .notch-blink {
+    animation: none;
+  }
+}
