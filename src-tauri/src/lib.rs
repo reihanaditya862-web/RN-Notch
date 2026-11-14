@@ -1,3 +1,6 @@
+mod commands;
+
+use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::thread;
@@ -5,6 +8,13 @@ use std::time::Duration;
 
 use serde::Deserialize;
 use tauri::{Emitter, Manager, PhysicalPosition, State, WebviewWindow};
+use windows::Win32::Foundation::{HWND, POINT, RECT};
+use windows::Win32::UI::HiDpi::GetDpiForWindow;
+use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetWindowRect};
+
+use commands::media::{self, MediaState};
+use commands::system::{self, SystemState};
+use commands::audio;
 
 /// Label of the notch window, as declared in `tauri.conf.json`.
 const NOTCH_LABEL: &str = "notch";
@@ -12,17 +22,47 @@ const NOTCH_LABEL: &str = "notch";
 /// Event sent to the frontend whenever the cursor enters or leaves the capsule.
 const HOVER_EVENT: &str = "notch-hover";
 
-/// How often the cursor position is compared against the capsule.
-const CURSOR_POLL_INTERVAL: Duration = Duration::from_millis(33);
+/// Cursor check interval while the cursor is close to the notch window. Short,
+/// so a click made right after leaving the capsule already passes through.
+const CURSOR_POLL_NEAR: Duration = Duration::from_millis(8);
 
-/// The capsule's rectangle in logical (CSS) pixels, relative to the window's
-/// top-left corner. Reported by the frontend whenever the capsule changes size.
+/// Cursor check interval while the cursor is elsewhere on the screen.
+const CURSOR_POLL_FAR: Duration = Duration::from_millis(40);
+
+/// How far around the window (physical px) the cursor counts as "close".
+const NEAR_MARGIN_PX: i32 = 160;
+
+/// The capsule's shape in logical (CSS) pixels, relative to the window's
+/// top-left corner: a rectangle with rounded corners. Reported by the
+/// frontend whenever the capsule changes state.
 #[derive(Debug, Clone, Copy, Deserialize)]
 struct HitRegion {
     x: f64,
     y: f64,
     width: f64,
     height: f64,
+    #[serde(default)]
+    radius: f64,
+}
+
+impl HitRegion {
+    /// True when the point lies on the capsule itself. The area cut away by
+    /// the rounded corners does not count, so it stays click-through.
+    fn contains(&self, px: f64, py: f64) -> bool {
+        let (left, top) = (self.x, self.y);
+        let (right, bottom) = (self.x + self.width, self.y + self.height);
+        if px < left || px >= right || py < top || py >= bottom {
+            return false;
+        }
+
+        let radius = self.radius.clamp(0.0, self.width.min(self.height) / 2.0);
+
+        // Distance from the point to the rectangle shrunk by `radius`; inside
+        // the rounded shape that distance is never more than `radius`.
+        let dx = px - px.clamp(left + radius, right - radius);
+        let dy = py - py.clamp(top + radius, bottom - radius);
+        dx * dx + dy * dy <= radius * radius
+    }
 }
 
 /// Shared click-through state.
@@ -51,13 +91,13 @@ fn set_clickthrough(
     Ok(())
 }
 
-/// Stores the capsule rectangle used by the cursor watcher.
+/// Stores the capsule shape used by the cursor watcher.
 #[tauri::command]
 fn set_hit_region(state: State<'_, ClickThroughState>, region: HitRegion) -> Result<(), String> {
-    let all_finite = [region.x, region.y, region.width, region.height]
+    let all_finite = [region.x, region.y, region.width, region.height, region.radius]
         .iter()
         .all(|value| value.is_finite());
-    if !all_finite || region.width <= 0.0 || region.height <= 0.0 {
+    if !all_finite || region.width <= 0.0 || region.height <= 0.0 || region.radius < 0.0 {
         return Err(format!("invalid hit region: {region:?}"));
     }
 
@@ -75,7 +115,7 @@ fn reposition_center(window: WebviewWindow) -> Result<(), String> {
 /// Centers the window horizontally on the primary monitor and pins it to the
 /// top edge.
 ///
-/// The `x: 720` in `tauri.conf.json` is only right for 1920px at 100% scaling.
+/// The `x` in `tauri.conf.json` is only right for 1920px at 100% scaling.
 /// Working in physical pixels here keeps the notch centered at 125% / 150%
 /// Windows display scaling and on other resolutions.
 fn center_top(window: &WebviewWindow) -> tauri::Result<()> {
@@ -97,18 +137,40 @@ fn center_top(window: &WebviewWindow) -> tauri::Result<()> {
     window.set_position(PhysicalPosition::new(x, y))
 }
 
-/// Returns true when the cursor is inside the capsule rectangle.
-fn cursor_in_region(window: &WebviewWindow, region: HitRegion) -> tauri::Result<bool> {
-    let cursor = window.cursor_position()?;
-    let origin = window.inner_position()?;
-    let scale = window.scale_factor()?;
+/// Where the cursor is, relative to the capsule and the notch window.
+struct CursorProbe {
+    /// The cursor is on the capsule.
+    inside: bool,
+    /// The cursor is on or close to the notch window.
+    near: bool,
+}
 
-    let left = f64::from(origin.x) + region.x * scale;
-    let top = f64::from(origin.y) + region.y * scale;
-    let right = left + region.width * scale;
-    let bottom = top + region.height * scale;
+/// Reads the cursor straight from Win32. These calls are cheap and do not go
+/// through the UI thread, which is what makes the short poll interval viable.
+fn probe_cursor(hwnd: HWND, region: HitRegion) -> Option<CursorProbe> {
+    let mut cursor = POINT::default();
+    let mut window_rect = RECT::default();
+    unsafe {
+        GetCursorPos(&mut cursor).ok()?;
+        GetWindowRect(hwnd, &mut window_rect).ok()?;
+    }
 
-    Ok(cursor.x >= left && cursor.x < right && cursor.y >= top && cursor.y < bottom)
+    let dpi = unsafe { GetDpiForWindow(hwnd) };
+    let scale = if dpi == 0 { 1.0 } else { f64::from(dpi) / 96.0 };
+
+    // Physical screen pixels -> logical pixels inside the window.
+    let x = f64::from(cursor.x - window_rect.left) / scale;
+    let y = f64::from(cursor.y - window_rect.top) / scale;
+
+    let near = cursor.x >= window_rect.left - NEAR_MARGIN_PX
+        && cursor.x < window_rect.right + NEAR_MARGIN_PX
+        && cursor.y >= window_rect.top - NEAR_MARGIN_PX
+        && cursor.y < window_rect.bottom + NEAR_MARGIN_PX;
+
+    Some(CursorProbe {
+        inside: region.contains(x, y),
+        near,
+    })
 }
 
 /// Watches the cursor from a background thread.
@@ -116,45 +178,59 @@ fn cursor_in_region(window: &WebviewWindow, region: HitRegion) -> tauri::Result<
 /// A window that ignores cursor events receives no mouse messages at all, so
 /// the webview can never fire `mouseenter` to switch click-through back off.
 /// This watcher closes that gap: it compares the global cursor position with
-/// the capsule rectangle and toggles click-through whenever the cursor crosses
+/// the capsule shape and toggles click-through the moment the cursor crosses
 /// its edge, then tells the frontend about the change.
-fn spawn_cursor_watcher(window: WebviewWindow) -> std::io::Result<()> {
+///
+/// Everything outside the capsule - including the transparent rest of the
+/// window - therefore stays click-through.
+fn spawn_cursor_watcher(window: WebviewWindow) -> Result<(), Box<dyn std::error::Error>> {
+    // A raw window handle is not `Send`; carry it across as an integer.
+    let raw_hwnd = window.hwnd()?.0 as isize;
+
     thread::Builder::new()
         .name("notch-cursor-watcher".into())
-        .spawn(move || watch_cursor(window))
-        .map(|_| ())
+        .spawn(move || watch_cursor(window, raw_hwnd))?;
+    Ok(())
 }
 
 /// Body of the watcher thread. Runs for the lifetime of the app.
-fn watch_cursor(window: WebviewWindow) {
+fn watch_cursor(window: WebviewWindow, raw_hwnd: isize) {
+    let hwnd = HWND(raw_hwnd as *mut c_void);
+
     loop {
-        thread::sleep(CURSOR_POLL_INTERVAL);
-
-        let state = window.state::<ClickThroughState>();
-
-        let region = match state.region.lock() {
-            Ok(guard) => *guard,
-            Err(_) => continue,
-        };
-        let Some(region) = region else {
-            continue;
-        };
-
-        let inside = match cursor_in_region(&window, region) {
-            Ok(inside) => inside,
-            Err(_) => continue,
-        };
-
-        let should_ignore = !inside;
-        if state.ignoring.load(Ordering::Relaxed) == should_ignore {
-            continue;
-        }
-
-        if window.set_ignore_cursor_events(should_ignore).is_ok() {
-            state.ignoring.store(should_ignore, Ordering::Relaxed);
-            let _ = window.emit(HOVER_EVENT, inside);
-        }
+        let near = check_cursor(&window, hwnd);
+        thread::sleep(if near {
+            CURSOR_POLL_NEAR
+        } else {
+            CURSOR_POLL_FAR
+        });
     }
+}
+
+/// One watcher step. Returns whether the cursor is close to the window.
+fn check_cursor(window: &WebviewWindow, hwnd: HWND) -> bool {
+    let state = window.state::<ClickThroughState>();
+
+    let region = match state.region.lock() {
+        Ok(guard) => *guard,
+        Err(_) => return false,
+    };
+    let Some(region) = region else {
+        return false;
+    };
+    let Some(probe) = probe_cursor(hwnd, region) else {
+        return false;
+    };
+
+    let should_ignore = !probe.inside;
+    if state.ignoring.load(Ordering::Relaxed) != should_ignore
+        && window.set_ignore_cursor_events(should_ignore).is_ok()
+    {
+        state.ignoring.store(should_ignore, Ordering::Relaxed);
+        let _ = window.emit(HOVER_EVENT, probe.inside);
+    }
+
+    probe.near
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -165,10 +241,20 @@ pub fn run() {
             region: Mutex::new(None),
             ignoring: AtomicBool::new(true),
         })
+        .manage(MediaState::default())
+        .manage(SystemState::default())
         .invoke_handler(tauri::generate_handler![
             set_clickthrough,
             set_hit_region,
-            reposition_center
+            reposition_center,
+            media::get_media_info,
+            media::media_play_pause,
+            media::media_next,
+            media::media_previous,
+            system::get_system_info,
+            audio::get_volume,
+            audio::set_volume,
+            audio::toggle_mute
         ])
         .setup(|app| {
             let window = app
@@ -176,7 +262,7 @@ pub fn run() {
                 .ok_or("notch window not found; check the label in tauri.conf.json")?;
 
             // Click-through is on from the first frame; the watcher turns it
-            // off only while the cursor is over the capsule.
+            // off only while the cursor is on the capsule.
             window.set_ignore_cursor_events(true)?;
 
             // A failed lookup of the monitor is not fatal: the window simply
@@ -191,4 +277,60 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::HitRegion;
+
+    /// The idle capsule: 180x28 at (170, 8) with fully rounded ends.
+    const PILL: HitRegion = HitRegion {
+        x: 170.0,
+        y: 8.0,
+        width: 180.0,
+        height: 28.0,
+        radius: 14.0,
+    };
+
+    #[test]
+    fn center_and_straight_edges_are_inside() {
+        assert!(PILL.contains(260.0, 22.0));
+        assert!(PILL.contains(260.0, 8.0));
+        assert!(PILL.contains(260.0, 35.9));
+        assert!(PILL.contains(170.5, 22.0));
+    }
+
+    #[test]
+    fn everything_around_the_capsule_is_outside() {
+        assert!(!PILL.contains(260.0, 7.9)); // the gap above the capsule
+        assert!(!PILL.contains(260.0, 36.0)); // just below
+        assert!(!PILL.contains(169.9, 22.0)); // just left
+        assert!(!PILL.contains(350.0, 22.0)); // just right
+    }
+
+    #[test]
+    fn rounded_corners_are_outside() {
+        // Inside the bounding box, but cut away by the corner radius.
+        assert!(!PILL.contains(171.0, 9.0));
+        assert!(!PILL.contains(349.0, 9.0));
+        assert!(!PILL.contains(171.0, 35.0));
+        assert!(!PILL.contains(349.0, 35.0));
+        // Same corner, a bit further in: on the capsule.
+        assert!(PILL.contains(176.0, 14.0));
+    }
+
+    #[test]
+    fn zero_radius_is_a_plain_rectangle() {
+        let rect = HitRegion { radius: 0.0, ..PILL };
+        assert!(rect.contains(170.0, 8.0));
+        assert!(rect.contains(349.9, 35.9));
+        assert!(!rect.contains(350.0, 36.0));
+    }
+
+    #[test]
+    fn oversized_radius_is_clamped() {
+        let pill = HitRegion { radius: 999.0, ..PILL };
+        assert!(pill.contains(260.0, 22.0));
+        assert!(!pill.contains(171.0, 9.0));
+    }
 }

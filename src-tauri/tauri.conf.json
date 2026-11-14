@@ -14,9 +14,9 @@
       {
         "label": "notch",
         "title": "Dynamic Island",
-        "width": 480,
-        "height": 200,
-        "x": 720,
+        "width": 520,
+        "height": 360,
+        "x": 700,
         "y": 0,
         "decorations": false,
         "transparent": true,

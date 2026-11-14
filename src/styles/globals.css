@@ -34,6 +34,8 @@
   --notch-error: var(--notch-accent-red);
   --notch-info: var(--notch-accent-cyan);
   --notch-charging: var(--notch-accent-amber);
+  --notch-playing: var(--notch-accent-emerald);
+  --notch-focus: var(--notch-accent-cyan);
 
   /* Typography */
   --notch-font-text: "Inter Variable", "Inter", system-ui, -apple-system, sans-serif;
@@ -43,10 +45,19 @@
   --notch-font-size-sm: 12px;
   --notch-font-size-base: 13px;
 
-  /* Sizing: idle capsule */
+  /* Sizing. The animated values live in src/lib/constants.ts; keep both in sync. */
+  --notch-top-offset: 8px;
+
   --notch-idle-w: 180px;
   --notch-idle-h: 32px;
   --notch-idle-radius: 16px;
+
+  --notch-idle-media-w: 280px;
+  --notch-idle-media-h: 32px;
+
+  --notch-hover-w: 360px;
+  --notch-hover-h: 100px;
+  --notch-hover-radius: 16px;
 }
 
 /* Expose the tokens as Tailwind utilities, e.g. `text-notch-secondary`, `font-mono`. */
@@ -62,6 +73,8 @@
   --color-notch-secondary: var(--notch-text-secondary);
   --color-notch-tertiary: var(--notch-text-tertiary);
   --color-notch-charging: var(--notch-charging);
+  --color-notch-playing: var(--notch-playing);
+  --color-notch-focus: var(--notch-focus);
   --color-notch-error: var(--notch-error);
 }
 

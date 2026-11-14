@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import {
   Battery,
   BatteryCharging,
@@ -6,117 +5,78 @@ import {
   BatteryLow,
   BatteryMedium,
   BatteryWarning,
+  Plug,
   type LucideIcon,
 } from "lucide-react";
-
-/** Battery Status API. Available in WebView2, but not part of TypeScript's DOM typings. */
-interface BatteryManager extends EventTarget {
-  readonly charging: boolean;
-  readonly level: number;
-}
-
-type NavigatorWithBattery = Navigator & {
-  getBattery?: () => Promise<BatteryManager>;
-};
-
-interface BatteryStatus {
-  percent: number;
-  charging: boolean;
-}
+import { useNotchStore } from "../../stores/notchStore";
 
 const LOW_THRESHOLD = 10;
 const CRITICAL_THRESHOLD = 5;
 
-function readStatus(battery: BatteryManager): BatteryStatus {
-  return {
-    percent: Math.round(battery.level * 100),
-    charging: battery.charging,
-  };
-}
-
-function pickIcon(status: BatteryStatus): LucideIcon {
-  if (status.charging) return BatteryCharging;
-  if (status.percent < LOW_THRESHOLD) return BatteryWarning;
-  if (status.percent < 35) return BatteryLow;
-  if (status.percent < 75) return BatteryMedium;
+function pickIcon(percent: number, onAc: boolean): LucideIcon {
+  if (onAc) return BatteryCharging;
+  if (percent < LOW_THRESHOLD) return BatteryWarning;
+  if (percent < 35) return BatteryLow;
+  if (percent < 75) return BatteryMedium;
   return BatteryFull;
 }
+
+const TEXT_CLASS = "font-mono text-[12px] leading-none font-medium tracking-[-0.02em] tabular-nums";
 
 /**
  * Compact battery status: icon + percentage.
  *
- * Reads the level from the webview's Battery Status API and updates on
- * `levelchange` / `chargingchange` events, so there is no polling.
+ * Shows the real Windows battery state from the system info polls
+ * (`useSystemInfo`), so it always agrees with the dashboard.
  */
 export function BatteryIndicator() {
-  const [status, setStatus] = useState<BatteryStatus | null>(null);
+  const isLoaded = useNotchStore((store) => store.systemInfo !== null);
+  const percent = useNotchStore((store) => store.systemInfo?.battery_percent ?? null);
+  const isCharging = useNotchStore((store) => store.systemInfo?.is_charging ?? false);
+  const onAc = useNotchStore((store) => store.systemInfo?.is_ac_connected ?? false);
 
-  useEffect(() => {
-    const getBattery = (navigator as NavigatorWithBattery).getBattery;
-    if (typeof getBattery !== "function") return;
-
-    let disposed = false;
-    let battery: BatteryManager | null = null;
-
-    const update = () => {
-      if (battery && !disposed) setStatus(readStatus(battery));
-    };
-
-    getBattery
-      .call(navigator)
-      .then((manager) => {
-        if (disposed) return;
-        battery = manager;
-        update();
-        manager.addEventListener("levelchange", update);
-        manager.addEventListener("chargingchange", update);
-      })
-      .catch((error: unknown) => {
-        console.warn("[BatteryIndicator] battery status unavailable:", error);
-      });
-
-    return () => {
-      disposed = true;
-      battery?.removeEventListener("levelchange", update);
-      battery?.removeEventListener("chargingchange", update);
-    };
-  }, []);
-
-  if (!status) {
+  if (!isLoaded) {
     return (
       <span
         aria-label="Battery status unavailable"
-        className="flex items-center gap-1 text-notch-tertiary"
+        className="flex shrink-0 items-center gap-1 text-notch-tertiary"
       >
         <Battery size={14} strokeWidth={1.5} aria-hidden="true" />
-        <span className="font-mono text-[12px] leading-none font-medium tracking-[-0.02em]">
-          --
-        </span>
+        <span className={TEXT_CLASS}>--</span>
       </span>
     );
   }
 
-  const isLow = !status.charging && status.percent < LOW_THRESHOLD;
-  const isCritical = !status.charging && status.percent < CRITICAL_THRESHOLD;
-  const Icon = pickIcon(status);
+  // A desktop PC: no battery to report, only mains power.
+  if (percent === null) {
+    return (
+      <span
+        aria-label="Running on mains power"
+        className="flex shrink-0 items-center gap-1 text-notch-secondary"
+      >
+        <Plug size={14} strokeWidth={1.5} aria-hidden="true" />
+        <span className={TEXT_CLASS}>AC</span>
+      </span>
+    );
+  }
 
-  const tone = status.charging
-    ? "text-notch-charging"
-    : isLow
-      ? "text-notch-error"
-      : "text-notch-secondary";
-  const motion = status.charging ? "notch-pulse" : isLow ? "notch-blink" : "";
+  const isLow = !onAc && percent < LOW_THRESHOLD;
+  const isCritical = !onAc && percent < CRITICAL_THRESHOLD;
+  const Icon = pickIcon(percent, onAc);
 
-  const label = `Battery ${status.percent}%${status.charging ? ", charging" : ""}${
-    isLow ? ", low" : ""
+  const tone = onAc ? "text-notch-charging" : isLow ? "text-notch-error" : "text-notch-secondary";
+  const motion = isCharging ? "notch-pulse" : isLow ? "notch-blink" : "";
+
+  const label = `Battery ${percent}%${
+    isCharging ? ", charging" : onAc ? ", plugged in" : isLow ? ", low" : ""
   }`;
 
   return (
-    <span aria-label={label} className={`flex items-center gap-1 ${tone}`}>
+    <span aria-label={label} className={`flex shrink-0 items-center gap-1 ${tone}`}>
       <Icon size={14} strokeWidth={1.5} aria-hidden="true" className={motion} />
-      <span className="font-mono text-[12px] leading-none font-medium tracking-[-0.02em] tabular-nums">
+      <span className={TEXT_CLASS}>
         {isCritical ? "Low! " : ""}
-        {status.percent}%
+        {percent}%
       </span>
     </span>
   );
