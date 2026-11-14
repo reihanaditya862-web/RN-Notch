@@ -29,6 +29,7 @@ import {
   SYSTEM_POLL_IDLE_MS,
   TWEEN_REDUCED,
 } from "../lib/constants";
+import type { NotchState } from "../lib/types";
 import { useNotchStore } from "../stores/notchStore";
 import { DragOverlay } from "./DragOverlay";
 import { ExpandedView } from "./ExpandedView";
@@ -52,14 +53,26 @@ const TEXT_FIELD_SELECTOR = "input:not([type='range']), textarea";
 /** How often expired shelf files are cleaned up, in ms. */
 const SHELF_PRUNE_INTERVAL_MS = 60_000;
 
-/** Toggles click-through on the Tauri window. `ignore = true` lets clicks pass through. */
-async function setClickthrough(ignore: boolean): Promise<void> {
+/**
+ * Tells Rust the capsule's exact shape for a state: position, size and corner
+ * radius. The target shape is reported, not the animated one, so the hit area
+ * never lags the spring. Rust answers with a `notch-hover` event.
+ */
+function reportHitRegion(state: NotchState): void {
   if (!isTauri()) return;
-  try {
-    await invoke("set_clickthrough", { ignore });
-  } catch (error) {
-    console.warn("[NotchContainer] set_clickthrough failed:", error);
-  }
+
+  const { width, height, radius } = NOTCH_SIZES[state];
+  invoke("set_hit_region", {
+    region: {
+      x: (window.innerWidth - width) / 2,
+      y: NOTCH_TOP_OFFSET,
+      width,
+      height,
+      radius,
+    },
+  }).catch((error: unknown) => {
+    console.warn("[NotchContainer] set_hit_region failed:", error);
+  });
 }
 
 /**
@@ -76,12 +89,13 @@ async function setClickthrough(ignore: boolean): Promise<void> {
  * it, a mouse button pressed on it is still held, or a text field in it has
  * focus - and shrinks back by itself afterwards, dashboard included.
  *
- * Click-through works in two layers:
- * 1. `onMouseEnter` / `onMouseLeave` call `set_clickthrough(false / true)`.
- * 2. A window that ignores cursor events never receives `mouseenter`, so the
- *    capsule's exact shape is reported to Rust (`set_hit_region`). A cursor
- *    watcher there switches click-through off only while the cursor is on the
- *    capsule and emits `notch-hover`.
+ * Click-through and hover have a single authority: the cursor watcher in
+ * Rust. A window that ignores cursor events never receives `mouseenter`, so
+ * the webview cannot decide this by itself. Instead the capsule's exact shape
+ * is reported to Rust (`set_hit_region`); the watcher makes the window
+ * clickable only while the cursor is on that shape and emits `notch-hover`.
+ * Everything else - the gap above the capsule, the corners cut away by its
+ * radius, the transparent rest of the window - always stays click-through.
  */
 export function NotchContainer() {
   const reducedMotion = useReducedMotion();
@@ -130,17 +144,17 @@ export function NotchContainer() {
 
   // --- Cursor ---------------------------------------------------------------
 
+  // DOM hover is only used where there is no Rust watcher (a plain browser).
+  // Inside Tauri it would be a second, slightly different opinion.
   const handleMouseEnter = useCallback(() => {
-    setCursorOver(true);
-    void setClickthrough(false);
+    if (!isTauri()) setCursorOver(true);
   }, []);
 
   const handleMouseLeave = useCallback(() => {
-    setCursorOver(false);
-    void setClickthrough(true);
+    if (!isTauri()) setCursorOver(false);
   }, []);
 
-  // Follow hover changes detected by the Rust cursor watcher.
+  // Follow the Rust cursor watcher.
   useEffect(() => {
     if (!isTauri()) return;
 
@@ -153,8 +167,14 @@ export function NotchContainer() {
       if (!event.payload) useNotchStore.getState().setDragOver(false);
     })
       .then((stop) => {
-        if (disposed) stop();
-        else unlisten = stop;
+        if (disposed) {
+          stop();
+          return;
+        }
+        unlisten = stop;
+        // Now that we are listening, ask for the current hover state: the
+        // cursor may already have been on the capsule before this point.
+        reportHitRegion(useNotchStore.getState().state);
       })
       .catch((error: unknown) => {
         console.warn("[NotchContainer] could not listen for hover events:", error);
@@ -166,29 +186,13 @@ export function NotchContainer() {
     };
   }, []);
 
-  // Tell Rust the capsule's shape. The target shape of the current state is
-  // reported, not the animated one, so the hit area never lags the spring.
+  // Keep Rust's copy of the capsule shape current.
   useEffect(() => {
-    if (!isTauri()) return;
+    const report = () => reportHitRegion(state);
 
-    const reportRegion = () => {
-      const { width, height, radius } = NOTCH_SIZES[state];
-      invoke("set_hit_region", {
-        region: {
-          x: (window.innerWidth - width) / 2,
-          y: NOTCH_TOP_OFFSET,
-          width,
-          height,
-          radius,
-        },
-      }).catch((error: unknown) => {
-        console.warn("[NotchContainer] set_hit_region failed:", error);
-      });
-    };
-
-    reportRegion();
-    window.addEventListener("resize", reportRegion);
-    return () => window.removeEventListener("resize", reportRegion);
+    report();
+    window.addEventListener("resize", report);
+    return () => window.removeEventListener("resize", report);
   }, [state]);
 
   // --- Engagement: held mouse button and text focus -------------------------
@@ -226,15 +230,16 @@ export function NotchContainer() {
     (event: MouseEvent<HTMLDivElement>) => {
       if ((event.target as Element).closest(INTERACTIVE_SELECTOR)) return;
 
+      // Opening only. Inside the dashboard a click on the background does
+      // nothing, so a near miss on the slider or a file never closes it; it
+      // closes with the chevron, Esc, or simply by moving the cursor away.
       const store = useNotchStore.getState();
-      if (store.isExpanded) {
-        collapse();
-      } else {
+      if (!store.isExpanded) {
         store.setExpanded(true);
         open(); // a click does not wait for the hover delay
       }
     },
-    [collapse, open],
+    [open],
   );
 
   useEffect(() => {

@@ -30,8 +30,10 @@ export function ExpandedView({
   onCollapse,
 }: ExpandedViewProps) {
   return (
-    <div className="flex h-full w-full flex-col gap-2.5 p-3">
-      <div className="h-[74px] shrink-0">
+    // Fixed budget: 278px inner height - 24px padding = 254px.
+    // 72 (media) + 1 (rule) + 70 (HUD) + 50 (shelf) + 28 (note) + 4 gaps of 8 = 253.
+    <div className="flex h-full w-full flex-col gap-2 p-3 *:shrink-0">
+      <div className="h-[72px]">
         <MediaPill
           media={media}
           pollIntervalMs={mediaPollIntervalMs}
@@ -60,7 +62,7 @@ export function ExpandedView({
         />
       </div>
 
-      <hr className="-mx-3 shrink-0 border-notch-border" />
+      <hr className="-mx-3 border-notch-border" />
 
       <SystemHUD />
       <FileShelf />

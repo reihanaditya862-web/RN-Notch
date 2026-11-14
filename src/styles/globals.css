@@ -49,15 +49,23 @@
   --notch-top-offset: 8px;
 
   --notch-idle-w: 180px;
-  --notch-idle-h: 32px;
-  --notch-idle-radius: 16px;
+  --notch-idle-h: 28px;
+  --notch-idle-radius: 14px;
 
   --notch-idle-media-w: 280px;
-  --notch-idle-media-h: 32px;
+  --notch-idle-media-h: 28px;
 
   --notch-hover-w: 360px;
   --notch-hover-h: 100px;
   --notch-hover-radius: 16px;
+
+  --notch-expanded-w: 420px;
+  --notch-expanded-h: 280px;
+  --notch-expanded-radius: 24px;
+
+  --notch-drag-over-w: 340px;
+  --notch-drag-over-h: 100px;
+  --notch-drag-over-radius: 24px;
 }
 
 /* Expose the tokens as Tailwind utilities, e.g. `text-notch-secondary`, `font-mono`. */
@@ -67,8 +75,11 @@
 
   --color-notch-bg: var(--notch-bg);
   --color-notch-surface: var(--notch-surface);
+  --color-notch-surface-hover: var(--notch-surface-hover);
   --color-notch-border: var(--notch-border);
   --color-notch-border-hover: var(--notch-border-hover);
+  --color-notch-border-active: var(--notch-border-active);
+  --color-notch-info: var(--notch-info);
   --color-notch-primary: var(--notch-text-primary);
   --color-notch-secondary: var(--notch-text-secondary);
   --color-notch-tertiary: var(--notch-text-tertiary);
@@ -122,6 +133,17 @@ body {
   }
 }
 
+/* Drop target frame while a file is dragged over the capsule. */
+@keyframes notch-drop-pulse {
+  0%,
+  100% {
+    border-color: rgb(34 211 238 / 0.4);
+  }
+  50% {
+    border-color: rgb(34 211 238 / 1);
+  }
+}
+
 .notch-pulse {
   animation: notch-pulse 1s ease-in-out infinite;
 }
@@ -130,9 +152,88 @@ body {
   animation: notch-blink 0.8s ease-in-out infinite;
 }
 
+.notch-drop-pulse {
+  animation: notch-drop-pulse 1.5s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .notch-pulse,
-  .notch-blink {
+  .notch-blink,
+  .notch-drop-pulse {
     animation: none;
   }
+}
+
+/* Text fields stay selectable although the rest of the UI is not. */
+input,
+textarea {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
+/* Volume slider: thin track, filled up to --range-fill, small round thumb. */
+.notch-range {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 16px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  outline: none;
+}
+
+.notch-range::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--notch-text-primary) 0 var(--range-fill, 0%),
+    rgba(255, 255, 255, 0.12) var(--range-fill, 0%) 100%
+  );
+}
+
+.notch-range::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+  margin-top: -3.5px;
+  border-radius: 50%;
+  background: var(--notch-text-primary);
+  transition: transform 100ms ease;
+}
+
+.notch-range:hover::-webkit-slider-thumb {
+  transform: scale(1.2);
+}
+
+.notch-range:active::-webkit-slider-thumb {
+  transform: scale(1.05);
+}
+
+.notch-range:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--notch-focus);
+  outline-offset: 2px;
+}
+
+.notch-range:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+/* Muted: the level is kept, but the fill is dimmed. */
+.notch-range-muted::-webkit-slider-runnable-track {
+  background: linear-gradient(
+    to right,
+    var(--notch-text-tertiary) 0 var(--range-fill, 0%),
+    rgba(255, 255, 255, 0.12) var(--range-fill, 0%) 100%
+  );
+}
+
+.notch-range-muted::-webkit-slider-thumb {
+  background: var(--notch-text-secondary);
 }

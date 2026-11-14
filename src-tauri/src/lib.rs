@@ -2,7 +2,7 @@ mod commands;
 
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 use std::thread;
 use std::time::Duration;
 
@@ -66,32 +66,55 @@ impl HitRegion {
 }
 
 /// Shared click-through state.
-///
-/// `ignoring` mirrors the value last passed to `set_ignore_cursor_events`, so
-/// the cursor watcher and the frontend commands never fight over it.
 struct ClickThroughState {
     region: Mutex<Option<HitRegion>>,
-    ignoring: AtomicBool,
+    /// The value last passed to `set_ignore_cursor_events`. The lock is held
+    /// while the window is being changed, so this can never disagree with the
+    /// real window, whichever thread makes the change.
+    ignoring: Mutex<bool>,
+    /// Asks the watcher to announce the hover state again on its next step.
+    resync: AtomicBool,
 }
 
-/// Turns click-through on or off for the notch window.
+impl ClickThroughState {
+    /// Switches click-through and records it. Returns whether anything changed.
+    ///
+    /// Must not be called from the UI thread: the window call is handed to
+    /// that thread while the lock is held.
+    fn apply(&self, window: &WebviewWindow, ignore: bool) -> tauri::Result<bool> {
+        let mut current = self.ignoring.lock().unwrap_or_else(PoisonError::into_inner);
+        if *current == ignore {
+            return Ok(false);
+        }
+        window.set_ignore_cursor_events(ignore)?;
+        *current = ignore;
+        Ok(true)
+    }
+}
+
+/// Turns click-through on or off for the notch window by hand.
 ///
 /// `ignore = true`  -> mouse events pass through to whatever is underneath.
 /// `ignore = false` -> the window receives hover and click events.
-#[tauri::command]
+///
+/// The cursor watcher is the authority: it re-evaluates within milliseconds
+/// and will override a value that contradicts where the cursor is. The
+/// frontend therefore does not need to call this on hover.
+#[tauri::command(async)]
 fn set_clickthrough(
     window: WebviewWindow,
     state: State<'_, ClickThroughState>,
     ignore: bool,
 ) -> Result<(), String> {
-    window
-        .set_ignore_cursor_events(ignore)
-        .map_err(|error| error.to_string())?;
-    state.ignoring.store(ignore, Ordering::Relaxed);
-    Ok(())
+    state
+        .apply(&window, ignore)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }
 
-/// Stores the capsule shape used by the cursor watcher.
+/// Stores the capsule shape used by the cursor watcher. The watcher answers
+/// with a `notch-hover` event, so the frontend always knows where the cursor
+/// stands relative to the new shape.
 #[tauri::command]
 fn set_hit_region(state: State<'_, ClickThroughState>, region: HitRegion) -> Result<(), String> {
     let all_finite = [region.x, region.y, region.width, region.height, region.radius]
@@ -103,6 +126,7 @@ fn set_hit_region(state: State<'_, ClickThroughState>, region: HitRegion) -> Res
 
     let mut guard = state.region.lock().map_err(|error| error.to_string())?;
     *guard = Some(region);
+    state.resync.store(true, Ordering::Relaxed);
     Ok(())
 }
 
@@ -179,7 +203,8 @@ fn probe_cursor(hwnd: HWND, region: HitRegion) -> Option<CursorProbe> {
 /// the webview can never fire `mouseenter` to switch click-through back off.
 /// This watcher closes that gap: it compares the global cursor position with
 /// the capsule shape and toggles click-through the moment the cursor crosses
-/// its edge, then tells the frontend about the change.
+/// its edge, then tells the frontend about the change. It is the single
+/// authority for both click-through and hover.
 ///
 /// Everything outside the capsule - including the transparent rest of the
 /// window - therefore stays click-through.
@@ -222,11 +247,10 @@ fn check_cursor(window: &WebviewWindow, hwnd: HWND) -> bool {
         return false;
     };
 
-    let should_ignore = !probe.inside;
-    if state.ignoring.load(Ordering::Relaxed) != should_ignore
-        && window.set_ignore_cursor_events(should_ignore).is_ok()
-    {
-        state.ignoring.store(should_ignore, Ordering::Relaxed);
+    // Announce every change, and also answer a pending resync request.
+    let resync = state.resync.swap(false, Ordering::Relaxed);
+    let changed = state.apply(window, !probe.inside).unwrap_or(false);
+    if changed || resync {
         let _ = window.emit(HOVER_EVENT, probe.inside);
     }
 
@@ -239,7 +263,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(ClickThroughState {
             region: Mutex::new(None),
-            ignoring: AtomicBool::new(true),
+            ignoring: Mutex::new(true),
+            resync: AtomicBool::new(false),
         })
         .manage(MediaState::default())
         .manage(SystemState::default())
