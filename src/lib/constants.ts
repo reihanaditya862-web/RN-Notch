@@ -1,11 +1,18 @@
 import type { Transition } from "framer-motion";
-import type { NotchState } from "./types";
+import type { AppSettings, NotchState } from "./types";
 
-/** Gap between the top edge of the screen and the capsule, in px. */
-export const NOTCH_TOP_OFFSET = 8;
+/** Name shown to the user. */
+export const APP_NAME = "RN Notch";
+
+/** Island mode: gap between the top edge of the screen and the capsule, in px. */
+export const ISLAND_TOP_OFFSET = 8;
+
+/** Notch mode: radius of the two bottom corners, in px (the top is flat). */
+export const NOTCH_BOTTOM_RADIUS = 16;
 
 /**
- * Capsule geometry per state, in px.
+ * Base capsule geometry per state, in px. `radius` is the island-mode radius;
+ * the final shape for a mode comes from `getNotchShape` in `lib/layout.ts`.
  *
  * The collapsed states are kept slim (28px) so the capsule covers as little
  * as possible of a maximized window's tab strip or title bar.
@@ -17,8 +24,23 @@ export const NOTCH_SIZES: Record<NotchState, { width: number; height: number; ra
   idleMedia: { width: 280, height: 28, radius: 14 },
   hover: { width: 360, height: 100, radius: 16 },
   expanded: { width: 420, height: 280, radius: 24 },
+  settings: { width: 420, height: 276, radius: 24 },
   dragOver: { width: 340, height: 100, radius: 24 },
 };
+
+/** Settings used until the real ones arrive from Rust; same values as its defaults. */
+export const DEFAULT_SETTINGS: AppSettings = {
+  display_mode: "island",
+  opacity: 0.95,
+  active_widgets: { media: true, system: true, file_shelf: true, scratchpad: true },
+  dnd_enabled: false,
+};
+
+export const OPACITY_MIN = 0.7;
+export const OPACITY_MAX = 1;
+
+/** A burst of setting changes is written to disk once, this long after the last one. */
+export const SETTINGS_SAVE_DEBOUNCE_MS = 300;
 
 /** Growing: a touch of overshoot, settles quickly. */
 export const SPRING_EXPAND: Transition = {

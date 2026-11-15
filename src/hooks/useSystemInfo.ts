@@ -8,11 +8,12 @@ import { useNotchStore } from "../stores/notchStore";
  * the store. Mount it once.
  *
  * @param pollIntervalMs time between polls; pass a shorter value while the
- *   dashboard is open. Changing it polls immediately.
+ *   dashboard is open. Changing it polls immediately. `null` pauses polling
+ *   (capsule hidden).
  */
-export function useSystemInfo(pollIntervalMs: number): void {
+export function useSystemInfo(pollIntervalMs: number | null): void {
   useEffect(() => {
-    if (!isTauri()) return;
+    if (!isTauri() || pollIntervalMs === null) return;
 
     let disposed = false;
     let timer = 0;

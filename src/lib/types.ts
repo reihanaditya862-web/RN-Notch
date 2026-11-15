@@ -38,5 +38,32 @@ export interface ShelfFile {
   added_at: number;
 }
 
+/**
+ * How the capsule sits on the screen.
+ * - `island`: floats 8px below the top edge, a full pill (iPhone style).
+ * - `notch`: flush with the top edge, flat on top, rounded below (MacBook style).
+ */
+export type DisplayMode = "island" | "notch";
+
+/** Which widgets are shown. Keys match the Rust `ActiveWidgets` struct. */
+export interface ActiveWidgets {
+  media: boolean;
+  system: boolean;
+  file_shelf: boolean;
+  scratchpad: boolean;
+}
+
+/**
+ * Mirrors the Rust `AppSettings` struct in `src-tauri/src/commands/settings.rs`.
+ * Stored at `%APPDATA%\rn-notch\settings.json`.
+ */
+export interface AppSettings {
+  display_mode: DisplayMode;
+  /** Opacity of the capsule background, 0.7-1.0. */
+  opacity: number;
+  active_widgets: ActiveWidgets;
+  dnd_enabled: boolean;
+}
+
 /** Visual states of the capsule implemented so far. */
-export type NotchState = "idle" | "idleMedia" | "hover" | "expanded" | "dragOver";
+export type NotchState = "idle" | "idleMedia" | "hover" | "expanded" | "settings" | "dragOver";

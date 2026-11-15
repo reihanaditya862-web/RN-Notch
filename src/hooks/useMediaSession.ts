@@ -51,9 +51,10 @@ function isSameMedia(a: MediaInfo | null, b: MediaInfo | null): boolean {
  * Polls the Windows media session through Rust and exposes transport controls.
  *
  * @param pollIntervalMs time between polls; pass a shorter value while the
- *   capsule is expanded so the progress bar stays accurate.
+ *   capsule is expanded so the progress bar stays accurate. `null` pauses
+ *   polling (media widget switched off, capsule hidden).
  */
-export function useMediaSession(pollIntervalMs: number): MediaSession {
+export function useMediaSession(pollIntervalMs: number | null): MediaSession {
   const [media, setMedia] = useState<MediaInfo | null>(null);
 
   const mediaRef = useRef<MediaInfo | null>(null);
@@ -110,6 +111,13 @@ export function useMediaSession(pollIntervalMs: number): MediaSession {
   useEffect(() => {
     if (!isTauri()) return;
 
+    if (pollIntervalMs === null) {
+      // Paused: drop the snapshot, it would only go stale.
+      requestSeq.current += 1;
+      commit(null);
+      return;
+    }
+
     let disposed = false;
     let timer = 0;
 
@@ -123,7 +131,7 @@ export function useMediaSession(pollIntervalMs: number): MediaSession {
       disposed = true;
       window.clearTimeout(timer);
     };
-  }, [pollIntervalMs, refresh]);
+  }, [pollIntervalMs, refresh, commit]);
 
   const runCommand = useCallback(
     async (command: "media_play_pause" | "media_next" | "media_previous") => {

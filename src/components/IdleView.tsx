@@ -1,4 +1,4 @@
-import { Music } from "lucide-react";
+import { Moon, Music } from "lucide-react";
 import type { MediaInfo } from "../lib/types";
 import { BatteryIndicator } from "./widgets/BatteryIndicator";
 import { ClockDisplay } from "./widgets/ClockDisplay";
@@ -6,6 +6,23 @@ import { ClockDisplay } from "./widgets/ClockDisplay";
 interface IdleViewProps {
   /** Pass the playing media to get the wider "idle + media" layout. */
   media: MediaInfo | null;
+  /** Do Not Disturb is on: show the purple dot and the moon. */
+  isDndEnabled: boolean;
+}
+
+/** Purple dot + moon: the capsule will not open or widen by itself. */
+function DndIndicator() {
+  return (
+    <span
+      role="img"
+      aria-label="Do Not Disturb is on"
+      title="Do Not Disturb"
+      className="flex shrink-0 items-center gap-1 text-notch-dnd"
+    >
+      <span className="h-1.5 w-1.5 rounded-full bg-notch-dnd" />
+      <Moon size={12} strokeWidth={1.5} aria-hidden="true" />
+    </span>
+  );
 }
 
 /**
@@ -14,12 +31,15 @@ interface IdleViewProps {
  * - No media: clock on the left, battery on the right (180px).
  * - Media playing: music icon and song title, then clock and battery (280px).
  */
-export function IdleView({ media }: IdleViewProps) {
+export function IdleView({ media, isDndEnabled }: IdleViewProps) {
   if (!media) {
     return (
       <div className="flex h-full w-full items-center justify-between px-3">
         <ClockDisplay />
-        <BatteryIndicator />
+        <span className="flex items-center gap-2">
+          {isDndEnabled && <DndIndicator />}
+          <BatteryIndicator />
+        </span>
       </div>
     );
   }

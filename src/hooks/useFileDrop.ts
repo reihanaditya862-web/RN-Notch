@@ -30,6 +30,12 @@ export function useFileDrop(onDrop: (added: number) => void): void {
         const store = useNotchStore.getState();
         const payload = event.payload;
 
+        // With the file shelf switched off the capsule is not a drop target.
+        if (!store.settings.active_widgets.file_shelf) {
+          store.setDragOver(false);
+          return;
+        }
+
         switch (payload.type) {
           case "enter":
           case "over":

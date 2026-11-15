@@ -36,6 +36,7 @@
   --notch-charging: var(--notch-accent-amber);
   --notch-playing: var(--notch-accent-emerald);
   --notch-focus: var(--notch-accent-cyan);
+  --notch-dnd: var(--notch-accent-purple);
 
   /* Typography */
   --notch-font-text: "Inter Variable", "Inter", system-ui, -apple-system, sans-serif;
@@ -45,27 +46,11 @@
   --notch-font-size-sm: 12px;
   --notch-font-size-base: 13px;
 
-  /* Sizing. The animated values live in src/lib/constants.ts; keep both in sync. */
-  --notch-top-offset: 8px;
-
-  --notch-idle-w: 180px;
-  --notch-idle-h: 28px;
-  --notch-idle-radius: 14px;
-
-  --notch-idle-media-w: 280px;
-  --notch-idle-media-h: 28px;
-
-  --notch-hover-w: 360px;
-  --notch-hover-h: 100px;
-  --notch-hover-radius: 16px;
-
-  --notch-expanded-w: 420px;
-  --notch-expanded-h: 280px;
-  --notch-expanded-radius: 24px;
-
-  --notch-drag-over-w: 340px;
-  --notch-drag-over-h: 100px;
-  --notch-drag-over-radius: 24px;
+  /*
+   * The capsule's sizes, offsets and radii are not tokens here: they depend
+   * on the state and the display mode and are animated from TypeScript.
+   * See NOTCH_SIZES in src/lib/constants.ts and getNotchShape in src/lib/layout.ts.
+   */
 }
 
 /* Expose the tokens as Tailwind utilities, e.g. `text-notch-secondary`, `font-mono`. */
@@ -86,6 +71,8 @@
   --color-notch-charging: var(--notch-charging);
   --color-notch-playing: var(--notch-playing);
   --color-notch-focus: var(--notch-focus);
+  --color-notch-dnd: var(--notch-dnd);
+  --color-notch-disabled: var(--notch-text-disabled);
   --color-notch-error: var(--notch-error);
 }
 

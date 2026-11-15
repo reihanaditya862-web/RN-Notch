@@ -1,23 +1,40 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { SHELF_FILE_TTL_MS, SHELF_MAX_FILES } from "../lib/constants";
-import type { NotchState, ShelfFile, SystemInfo } from "../lib/types";
+import {
+  DEFAULT_SETTINGS,
+  OPACITY_MAX,
+  OPACITY_MIN,
+  SHELF_FILE_TTL_MS,
+  SHELF_MAX_FILES,
+} from "../lib/constants";
+import type {
+  ActiveWidgets,
+  AppSettings,
+  NotchState,
+  ShelfFile,
+  SystemInfo,
+} from "../lib/types";
 
 /** How long a volume change made in the UI outranks what the polls report, in ms. */
 const VOLUME_HOLD_MS = 1000;
 
-/** The inputs the visual state is derived from. */
+/** Everything the visual state is derived from. */
 interface StateInputs {
   isHoverOpen: boolean;
   isExpanded: boolean;
+  isSettingsOpen: boolean;
   isDragOver: boolean;
   isMediaPlaying: boolean;
+  settings: AppSettings;
 }
 
 interface NotchStore extends StateInputs {
   /** Current visual state of the capsule. Derived from the inputs above. */
   state: NotchState;
   previousState: NotchState;
+
+  /** False while the capsule is hidden from the tray; polling pauses then. */
+  isVisible: boolean;
 
   /** Latest hardware snapshot from Rust; null until the first poll lands. */
   systemInfo: SystemInfo | null;
@@ -31,8 +48,23 @@ interface NotchStore extends StateInputs {
   setHoverOpen: (open: boolean) => void;
   setMediaPlaying: (playing: boolean) => void;
   setExpanded: (expanded: boolean) => void;
-  toggleExpanded: () => void;
   setDragOver: (over: boolean) => void;
+  openSettings: () => void;
+  closeSettings: () => void;
+  setVisible: (visible: boolean) => void;
+
+  /**
+   * Replaces the settings. Used for values coming from Rust (startup, tray);
+   * UI changes go through the setters below. `useSettingsSync` saves whatever
+   * differs from what Rust already has.
+   */
+  applySettings: (settings: AppSettings) => void;
+  /** Switches between Dynamic Island and Notch. */
+  toggleDisplayMode: () => void;
+  setDisplayMode: (mode: AppSettings["display_mode"]) => void;
+  setOpacity: (opacity: number) => void;
+  setWidgetActive: (widget: keyof ActiveWidgets, active: boolean) => void;
+  toggleDnd: () => void;
 
   setSystemInfo: (info: SystemInfo) => void;
   /** Show a volume change at once, before Windows confirms it. */
@@ -48,12 +80,24 @@ interface NotchStore extends StateInputs {
   setScratchpadText: (text: string) => void;
 }
 
-/** Priority: a file drag beats the dashboard, which beats hover, which beats idle. */
+/**
+ * Priority: a file drag beats the settings panel, which beats the dashboard,
+ * which beats hover, which beats idle.
+ *
+ * Do Not Disturb keeps the capsule from changing by itself: it neither widens
+ * for music nor opens on hover. A click still opens the dashboard.
+ */
 function resolveState(inputs: StateInputs): NotchState {
-  if (inputs.isDragOver) return "dragOver";
+  const { active_widgets: widgets, dnd_enabled: isQuiet } = inputs.settings;
+
+  if (inputs.isDragOver && widgets.file_shelf) return "dragOver";
+  if (inputs.isSettingsOpen) return "settings";
   if (inputs.isExpanded) return "expanded";
-  if (inputs.isHoverOpen) return "hover";
-  return inputs.isMediaPlaying ? "idleMedia" : "idle";
+  if (widgets.media && !isQuiet) {
+    if (inputs.isHoverOpen) return "hover";
+    if (inputs.isMediaPlaying) return "idleMedia";
+  }
+  return "idle";
 }
 
 function fileName(path: string): string {
@@ -65,6 +109,12 @@ function isFresh(file: ShelfFile, now: number): boolean {
   return now - file.added_at < SHELF_FILE_TTL_MS;
 }
 
+function clampOpacity(opacity: number): number {
+  if (!Number.isFinite(opacity)) return DEFAULT_SETTINGS.opacity;
+  // Two decimals: the slider works in whole percents.
+  return Math.round(Math.min(OPACITY_MAX, Math.max(OPACITY_MIN, opacity)) * 100) / 100;
+}
+
 export const useNotchStore = create<NotchStore>()(
   persist(
     (set, get) => {
@@ -74,8 +124,10 @@ export const useNotchStore = create<NotchStore>()(
         const inputs: StateInputs = {
           isHoverOpen: current.isHoverOpen,
           isExpanded: current.isExpanded,
+          isSettingsOpen: current.isSettingsOpen,
           isDragOver: current.isDragOver,
           isMediaPlaying: current.isMediaPlaying,
+          settings: current.settings,
           ...patch,
         };
         const state = resolveState(inputs);
@@ -86,13 +138,20 @@ export const useNotchStore = create<NotchStore>()(
         });
       };
 
+      const patchSettings = (patch: Partial<AppSettings>) =>
+        applyInputs({ settings: { ...get().settings, ...patch } });
+
       return {
         state: "idle",
         previousState: "idle",
         isHoverOpen: false,
         isExpanded: false,
+        isSettingsOpen: false,
         isDragOver: false,
         isMediaPlaying: false,
+        settings: DEFAULT_SETTINGS,
+
+        isVisible: true,
 
         systemInfo: null,
         volumeHoldUntil: 0,
@@ -110,10 +169,37 @@ export const useNotchStore = create<NotchStore>()(
         setExpanded: (expanded) => {
           if (expanded !== get().isExpanded) applyInputs({ isExpanded: expanded });
         },
-        toggleExpanded: () => applyInputs({ isExpanded: !get().isExpanded }),
         setDragOver: (over) => {
           if (over !== get().isDragOver) applyInputs({ isDragOver: over });
         },
+        openSettings: () => {
+          if (!get().isSettingsOpen) applyInputs({ isSettingsOpen: true, isExpanded: false });
+        },
+        closeSettings: () => {
+          if (get().isSettingsOpen) applyInputs({ isSettingsOpen: false });
+        },
+        setVisible: (visible) => set({ isVisible: visible }),
+
+        applySettings: (settings) =>
+          applyInputs({ settings: { ...settings, opacity: clampOpacity(settings.opacity) } }),
+        toggleDisplayMode: () =>
+          patchSettings({
+            display_mode: get().settings.display_mode === "island" ? "notch" : "island",
+          }),
+        setDisplayMode: (mode) => {
+          if (mode !== get().settings.display_mode) patchSettings({ display_mode: mode });
+        },
+        setOpacity: (opacity) => {
+          const next = clampOpacity(opacity);
+          if (next !== get().settings.opacity) patchSettings({ opacity: next });
+        },
+        setWidgetActive: (widget, active) => {
+          const widgets = get().settings.active_widgets;
+          if (widgets[widget] !== active) {
+            patchSettings({ active_widgets: { ...widgets, [widget]: active } });
+          }
+        },
+        toggleDnd: () => patchSettings({ dnd_enabled: !get().settings.dnd_enabled }),
 
         setSystemInfo: (info) => {
           const { systemInfo, volumeHoldUntil } = get();
@@ -189,7 +275,8 @@ export const useNotchStore = create<NotchStore>()(
       name: "dynamic-island",
       version: 1,
       storage: createJSONStorage(() => localStorage),
-      // Only user content survives a restart; everything else is live data.
+      // Only user content lives in localStorage. Settings belong to Rust
+      // (%APPDATA%\rn-notch\settings.json); everything else is live data.
       partialize: (store) => ({
         shelfFiles: store.shelfFiles,
         scratchpadText: store.scratchpadText,
