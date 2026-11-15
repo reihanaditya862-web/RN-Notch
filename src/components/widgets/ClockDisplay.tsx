@@ -48,7 +48,7 @@ export function ClockDisplay({ showSeconds = true, isCompact = false }: ClockDis
       aria-label={`Time ${text}`}
       className={[
         "flex shrink-0 font-display leading-none font-bold text-notch-primary",
-        isCompact ? "text-[11px]" : "text-[12px]",
+        isCompact ? "text-[10px]" : "text-[12px]",
       ].join(" ")}
     >
       <DigitText text={text} />

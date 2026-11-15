@@ -1,12 +1,14 @@
 //! System tray icon and its menu.
 //!
 //! Left click on the icon shows or hides the capsule. Right click opens the
-//! menu: Show/Hide, Switch Mode, Settings, Reset Position, Quit.
+//! menu: Show/Hide, Switch Mode, Settings, Reset Position, Start with
+//! Windows, Quit.
 
-use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
+use tauri::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, Wry};
 
+use crate::commands::autostart;
 use crate::commands::settings::{self, AppSettings, DisplayMode};
 use crate::visibility::{self, Visibility};
 use crate::{APP_NAME, NOTCH_LABEL, center_top};
@@ -17,6 +19,7 @@ const ID_TOGGLE_VISIBILITY: &str = "toggle_visibility";
 const ID_SWITCH_MODE: &str = "switch_mode";
 const ID_OPEN_SETTINGS: &str = "open_settings";
 const ID_RESET_POSITION: &str = "reset_position";
+const ID_AUTOSTART: &str = "autostart";
 const ID_QUIT: &str = "quit";
 
 /// Emitted with `true` / `false` when the capsule is shown or hidden.
@@ -25,10 +28,11 @@ pub const VISIBILITY_EVENT: &str = "visibility-changed";
 /// Asks the frontend to open its settings panel.
 pub const OPEN_SETTINGS_EVENT: &str = "open-settings";
 
-/// The menu items whose text follows the app's state.
+/// The menu items whose text or check mark follows the app's state.
 pub struct TrayMenu {
     visibility: MenuItem<Wry>,
     mode: MenuItem<Wry>,
+    autostart: CheckMenuItem<Wry>,
 }
 
 fn visibility_label(visible: bool) -> &'static str {
@@ -62,6 +66,14 @@ pub fn setup(app: &AppHandle, settings: &AppSettings) -> tauri::Result<()> {
     let open_settings =
         MenuItem::with_id(app, ID_OPEN_SETTINGS, "Settings...", true, None::<&str>)?;
     let reset = MenuItem::with_id(app, ID_RESET_POSITION, "Reset Position", true, None::<&str>)?;
+    let autostart = CheckMenuItem::with_id(
+        app,
+        ID_AUTOSTART,
+        "Start with Windows",
+        true,
+        autostart::is_enabled(app),
+        None::<&str>,
+    )?;
     let quit = MenuItem::with_id(
         app,
         ID_QUIT,
@@ -78,6 +90,7 @@ pub fn setup(app: &AppHandle, settings: &AppSettings) -> tauri::Result<()> {
             &PredefinedMenuItem::separator(app)?,
             &open_settings,
             &reset,
+            &autostart,
             &PredefinedMenuItem::separator(app)?,
             &quit,
         ],
@@ -94,7 +107,11 @@ pub fn setup(app: &AppHandle, settings: &AppSettings) -> tauri::Result<()> {
     }
     builder.build(app)?;
 
-    app.manage(TrayMenu { visibility, mode });
+    app.manage(TrayMenu {
+        visibility,
+        mode,
+        autostart,
+    });
     Ok(())
 }
 
@@ -103,6 +120,13 @@ pub fn setup(app: &AppHandle, settings: &AppSettings) -> tauri::Result<()> {
 pub fn sync(app: &AppHandle, settings: &AppSettings) {
     if let Some(menu) = app.try_state::<TrayMenu>() {
         let _ = menu.mode.set_text(mode_label(settings.display_mode));
+    }
+}
+
+/// Sets the check mark of "Start with Windows".
+pub fn sync_autostart(app: &AppHandle, enabled: bool) {
+    if let Some(menu) = app.try_state::<TrayMenu>() {
+        let _ = menu.autostart.set_checked(enabled);
     }
 }
 
@@ -142,6 +166,14 @@ fn on_menu_event(app: &AppHandle, event: MenuEvent) {
                 && let Err(error) = center_top(&window)
             {
                 eprintln!("could not reset the capsule's position: {error}");
+            }
+        }
+        ID_AUTOSTART => {
+            // Windows toggles the check mark by itself on click; `set_enabled`
+            // then sets it to what the startup entry really is.
+            let wanted = !autostart::is_enabled(app);
+            if let Err(error) = autostart::set_enabled(app, wanted) {
+                eprintln!("{error}");
             }
         }
         ID_QUIT => app.exit(0),

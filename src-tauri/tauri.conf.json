@@ -1,8 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "windows-dynamic-island",
-  "version": "0.1.0",
-  "identifier": "com.reiha.windows-dynamic-island",
+  "productName": "RN Notch",
+  "mainBinaryName": "rn-notch",
+  "version": "1.0.0",
+  "identifier": "com.rn.notch",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -13,9 +14,9 @@
     "windows": [
       {
         "label": "notch",
-        "title": "Dynamic Island",
+        "title": "RN Notch",
         "width": 520,
-        "height": 360,
+        "height": 380,
         "x": 700,
         "y": 0,
         "decorations": false,
@@ -37,13 +38,23 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis"],
+    "publisher": "RN",
+    "shortDescription": "Dynamic Island / notch for Windows",
+    "longDescription": "RN Notch puts a Dynamic Island or MacBook-style notch at the top of the Windows desktop: media controls, system monitor, a file shelf and a quick note.",
+    "category": "Utility",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false
+      }
+    }
   }
 }

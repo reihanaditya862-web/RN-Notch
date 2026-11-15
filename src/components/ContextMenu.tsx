@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { motion } from "framer-motion";
-import { Check, Copy, Moon, RefreshCw, Settings, X } from "lucide-react";
+import { Check, Copy, Moon, RefreshCw, Scaling, Settings, X } from "lucide-react";
 import { copyText } from "../lib/clipboard";
-import { APP_NAME } from "../lib/constants";
-import type { DisplayMode } from "../lib/types";
+import { APP_NAME, SCALE_OPTIONS } from "../lib/constants";
+import type { DisplayMode, ScaleOption } from "../lib/types";
 
 /**
  * Fixed geometry of the menu, in px. It is fixed on purpose: the menu's
@@ -14,7 +14,8 @@ const ITEM_HEIGHT = 28;
 const SEPARATOR_HEIGHT = 9;
 const PADDING = 4;
 const BORDER = 1;
-const ITEM_COUNT = 5;
+/** Five actions plus the size row, which is as tall as an item. */
+const ITEM_COUNT = 6;
 const SEPARATOR_COUNT = 1;
 
 export const CONTEXT_MENU_WIDTH = 216;
@@ -94,12 +95,63 @@ function MenuItem({ icon, label, onSelect, disabled, checked, tone = "default" }
   );
 }
 
+interface SizeRowProps {
+  scale: ScaleOption;
+  onSelect: (scale: ScaleOption) => void;
+}
+
+/** "Size" with one small button per option; the current one is highlighted. */
+function SizeRow({ scale, onSelect }: SizeRowProps) {
+  return (
+    <div
+      role="group"
+      aria-label="Size"
+      style={{ height: ITEM_HEIGHT }}
+      className="flex items-center gap-2 px-2 text-[12px] leading-4 text-notch-primary"
+    >
+      <span
+        aria-hidden="true"
+        className="flex h-4 w-4 shrink-0 items-center justify-center text-notch-secondary"
+      >
+        <Scaling size={14} strokeWidth={1.5} />
+      </span>
+      <span className="shrink-0">Size</span>
+      <span className="ml-auto flex items-center gap-0.5">
+        {SCALE_OPTIONS.map((option) => {
+          const isSelected = option.value === scale;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              role="menuitemradio"
+              aria-checked={isSelected}
+              aria-label={`Size ${option.label}`}
+              onClick={() => onSelect(option.value)}
+              className={[
+                "h-5 rounded px-1 text-[10px] leading-none font-medium outline-none transition-colors duration-75",
+                "hover:bg-white/[0.1] focus-visible:bg-white/[0.1]",
+                isSelected ? "bg-white/[0.14] text-notch-primary" : "text-notch-secondary",
+              ].join(" ")}
+            >
+              {/* The percent sign is dropped to fit five options in one row. */}
+              {option.value === "auto" ? "Auto" : option.value}
+            </button>
+          );
+        })}
+      </span>
+    </div>
+  );
+}
+
 interface ContextMenuProps {
   /** Top-left corner inside the window; use `placeContextMenu`. */
   x: number;
   y: number;
   displayMode: DisplayMode;
   isDndEnabled: boolean;
+  /** The size currently chosen. */
+  scale: ScaleOption;
+  onSelectScale: (scale: ScaleOption) => void;
   /** "Artist - Title" of the current track, or null when nothing is playing. */
   nowPlaying: string | null;
   onSwitchMode: () => void;
@@ -125,6 +177,8 @@ export function ContextMenu({
   y,
   displayMode,
   isDndEnabled,
+  scale,
+  onSelectScale,
   nowPlaying,
   onSwitchMode,
   onToggleDnd,
@@ -284,6 +338,8 @@ export function ContextMenu({
         <div className="h-px w-full bg-white/10" />
       </div>
 
+      {/* Resizing moves everything under the cursor, so the menu closes on a choice. */}
+      <SizeRow scale={scale} onSelect={(option) => choose(() => onSelectScale(option))()} />
       <MenuItem
         icon={<Settings size={14} strokeWidth={1.5} />}
         label="Settings..."

@@ -53,16 +53,23 @@ export function saveSettingsNow(): Promise<void> {
  */
 export function useSettingsSync(): void {
   useEffect(() => {
-    if (!isTauri()) return;
+    if (!isTauri()) {
+      // A plain browser has no saved settings to wait for.
+      useNotchStore.getState().markReady();
+      return;
+    }
 
     let disposed = false;
     const cleanups: Array<() => void> = [];
 
     const adopt = (settings: AppSettings) => {
-      useNotchStore.getState().applySettings(settings);
+      const store = useNotchStore.getState();
+      store.applySettings(settings);
       // Compare against what the store really holds (it normalizes values).
       syncedJson = JSON.stringify(useNotchStore.getState().settings);
       isLoaded = true;
+      // The capsule may be drawn now: it starts in the user's mode and size.
+      store.markReady();
     };
 
     invoke<AppSettings>("load_settings")

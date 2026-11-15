@@ -47,6 +47,23 @@ impl DisplayMode {
     }
 }
 
+/// Size of the capsule. `Auto` follows the monitor (decided by the frontend);
+/// the others are fixed percentages of the base size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum SizeScale {
+    #[default]
+    #[serde(rename = "auto")]
+    Auto,
+    #[serde(rename = "100")]
+    Percent100,
+    #[serde(rename = "125")]
+    Percent125,
+    #[serde(rename = "150")]
+    Percent150,
+    #[serde(rename = "175")]
+    Percent175,
+}
+
 /// Which widgets are shown.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActiveWidgets {
@@ -72,6 +89,8 @@ pub struct AppSettings {
     pub display_mode: DisplayMode,
     /// Opacity of the capsule background, 0.7-1.0.
     pub opacity: f32,
+    /// Size of the capsule: "auto", "100", "125", "150" or "175".
+    pub scale: SizeScale,
     pub active_widgets: ActiveWidgets,
     pub dnd_enabled: bool,
 }
@@ -81,6 +100,7 @@ impl Default for AppSettings {
         Self {
             display_mode: DisplayMode::default(),
             opacity: OPACITY_DEFAULT,
+            scale: SizeScale::default(),
             active_widgets: ActiveWidgets::default(),
             dnd_enabled: false,
         }
@@ -127,6 +147,10 @@ impl AppSettings {
                 .and_then(Value::as_f64)
                 .map(|value| value as f32)
                 .unwrap_or(defaults.opacity),
+            scale: root
+                .get("scale")
+                .and_then(|value| serde_json::from_value(value.clone()).ok())
+                .unwrap_or(defaults.scale),
             active_widgets: ActiveWidgets {
                 media: widget("media", defaults.active_widgets.media),
                 system: widget("system", defaults.active_widgets.system),
@@ -267,6 +291,30 @@ mod tests {
     }
 
     #[test]
+    fn scale_is_stored_as_auto_or_a_percentage() {
+        let json = serde_json::to_value(AppSettings {
+            scale: SizeScale::Percent125,
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(json["scale"], "125");
+        assert_eq!(serde_json::to_value(SizeScale::Auto).unwrap(), "auto");
+
+        assert_eq!(
+            AppSettings::from_json(r#"{ "scale": "175" }"#).scale,
+            SizeScale::Percent175
+        );
+        // Unknown or malformed values fall back to Auto.
+        assert_eq!(AppSettings::from_json(r#"{ "scale": "300" }"#).scale, SizeScale::Auto);
+        assert_eq!(AppSettings::from_json(r#"{ "scale": 125 }"#).scale, SizeScale::Auto);
+        // A settings file written before the option existed.
+        assert_eq!(
+            AppSettings::from_json(r#"{ "display_mode": "notch", "opacity": 1.0 }"#).scale,
+            SizeScale::Auto
+        );
+    }
+
+    #[test]
     fn missing_fields_fall_back_to_defaults() {
         let settings = AppSettings::from_json(r#"{ "display_mode": "notch" }"#);
         assert_eq!(settings.display_mode, DisplayMode::Notch);
@@ -325,6 +373,7 @@ mod tests {
         let wanted = AppSettings {
             display_mode: DisplayMode::Notch,
             opacity: 0.8,
+            scale: SizeScale::Percent150,
             active_widgets: ActiveWidgets {
                 file_shelf: false,
                 ..Default::default()

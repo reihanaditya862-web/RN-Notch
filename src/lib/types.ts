@@ -45,6 +45,12 @@ export interface ShelfFile {
  */
 export type DisplayMode = "island" | "notch";
 
+/**
+ * Size of the capsule: "auto" follows the monitor, the others are fixed
+ * percentages of the base size. Matches the Rust `SizeScale` enum.
+ */
+export type ScaleOption = "auto" | "100" | "125" | "150" | "175";
+
 /** Which widgets are shown. Keys match the Rust `ActiveWidgets` struct. */
 export interface ActiveWidgets {
   media: boolean;
@@ -61,16 +67,21 @@ export interface AppSettings {
   display_mode: DisplayMode;
   /** Opacity of the capsule background, 0.7-1.0. */
   opacity: number;
+  /** Size of the capsule. */
+  scale: ScaleOption;
   active_widgets: ActiveWidgets;
   dnd_enabled: boolean;
 }
 
-/** Mirrors the Rust `ForegroundState` struct in `src-tauri/src/commands/fullscreen.rs`. */
+/** Mirrors the Rust `ForegroundState` struct in `src-tauri/src/commands/window_detector.rs`. */
 export interface ForegroundState {
   /** A fullscreen app (game, fullscreen video, slide show) is in front. */
   is_fullscreen: boolean;
-  /** A maximized window (typically a browser) is in front. */
-  is_maximized: boolean;
+  /**
+   * An app window's title bar is under the capsule: the window is maximized,
+   * or snapped along the top edge beneath it (typically a browser).
+   */
+  is_window_maximized: boolean;
 }
 
 /** Visual states of the capsule implemented so far. */

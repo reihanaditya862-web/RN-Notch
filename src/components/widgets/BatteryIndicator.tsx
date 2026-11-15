@@ -24,6 +24,8 @@ interface BatteryIconProps {
   tone: Tone;
   /** Draws the charging bolt over the body. */
   hasBolt: boolean;
+  /** Size factor; the ultra-slim capsule uses a smaller icon. */
+  scale?: number;
   className?: string;
 }
 
@@ -31,7 +33,7 @@ interface BatteryIconProps {
  * Slim horizontal battery: a rounded body with a small terminal cap on the
  * right, a fill bar that follows the level, and a sharp bolt while plugged in.
  */
-function BatteryIcon({ percent, tone, hasBolt, className }: BatteryIconProps) {
+function BatteryIcon({ percent, tone, hasBolt, scale = 1, className }: BatteryIconProps) {
   const gradientId = useId();
   const level = Math.min(100, Math.max(0, percent)) / 100;
   // Keep a sliver visible above 0%, so the bar never disappears entirely.
@@ -46,8 +48,8 @@ function BatteryIcon({ percent, tone, hasBolt, className }: BatteryIconProps) {
 
   return (
     <svg
-      width={ICON_WIDTH}
-      height={ICON_HEIGHT}
+      width={ICON_WIDTH * scale}
+      height={ICON_HEIGHT * scale}
       viewBox={`0 0 ${ICON_WIDTH} ${ICON_HEIGHT}`}
       fill="none"
       aria-hidden="true"
@@ -129,9 +131,11 @@ export function BatteryIndicator({ isCompact = false }: BatteryIndicatorProps) {
   const isCharging = useNotchStore((store) => store.systemInfo?.is_charging ?? false);
   const onAc = useNotchStore((store) => store.systemInfo?.is_ac_connected ?? false);
 
+  // The ultra-slim capsule is 18px high: smaller type and a smaller icon.
+  const iconScale = isCompact ? 0.8 : 1;
   const textClass = [
     "font-display leading-none font-bold tracking-[-0.01em]",
-    isCompact ? "text-[11px]" : "text-[12px]",
+    isCompact ? "text-[10px]" : "text-[12px]",
   ].join(" ");
 
   if (!isLoaded) {
@@ -140,7 +144,7 @@ export function BatteryIndicator({ isCompact = false }: BatteryIndicatorProps) {
         aria-label="Battery status unavailable"
         className="flex shrink-0 items-center gap-1 text-notch-tertiary"
       >
-        <BatteryIcon percent={0} tone="normal" hasBolt={false} />
+        <BatteryIcon percent={0} tone="normal" hasBolt={false} scale={iconScale} />
         <span className={textClass}>--</span>
       </span>
     );
@@ -153,7 +157,7 @@ export function BatteryIndicator({ isCompact = false }: BatteryIndicatorProps) {
         aria-label="Running on mains power"
         className="flex shrink-0 items-center gap-1 text-notch-secondary"
       >
-        <Plug size={14} strokeWidth={1.5} aria-hidden="true" />
+        <Plug size={isCompact ? 11 : 14} strokeWidth={1.5} aria-hidden="true" />
         <span className={textClass}>AC</span>
       </span>
     );
@@ -179,6 +183,7 @@ export function BatteryIndicator({ isCompact = false }: BatteryIndicatorProps) {
         percent={percent}
         tone={tone}
         hasBolt={onAc}
+        scale={iconScale}
         className={isCharging ? "notch-pulse" : isLow ? "notch-blink" : undefined}
       />
       <span className={textClass}>

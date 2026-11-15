@@ -1,5 +1,5 @@
 import type { Transition } from "framer-motion";
-import type { AppSettings, NotchState } from "./types";
+import type { AppSettings, NotchState, ScaleOption } from "./types";
 
 /** Name shown to the user. */
 export const APP_NAME = "RN Notch";
@@ -7,8 +7,8 @@ export const APP_NAME = "RN Notch";
 /** Island mode: gap between the top edge of the screen and the capsule, in px. */
 export const ISLAND_TOP_OFFSET = 8;
 
-/** Island mode while a maximized app is in front: the gap shrinks to this. */
-export const ISLAND_TOP_OFFSET_COMPACT = 3;
+/** Island mode while an app window is under the capsule: the gap shrinks to this. */
+export const ISLAND_TOP_OFFSET_COMPACT = 1;
 
 /** Notch mode: radius of the two bottom corners, in px. */
 export const NOTCH_BOTTOM_RADIUS = 16;
@@ -19,8 +19,26 @@ export const NOTCH_BOTTOM_RADIUS = 16;
  */
 export const NOTCH_EAR_RADIUS = 12;
 
-/** Height of the collapsed capsule while a maximized app is in front, in px. */
-export const COMPACT_HEIGHT = 22;
+/**
+ * Ultra-slim: height of the collapsed capsule while an app window (a
+ * maximized browser, typically) is under it, in px.
+ */
+export const COMPACT_HEIGHT = 18;
+
+/** Sizes the user can pick, in the order they are offered. */
+export const SCALE_OPTIONS: ReadonlyArray<{ value: ScaleOption; label: string }> = [
+  { value: "auto", label: "Auto" },
+  { value: "100", label: "100%" },
+  { value: "125", label: "125%" },
+  { value: "150", label: "150%" },
+  { value: "175", label: "175%" },
+];
+
+/**
+ * "Auto" scales with the screen: 1.0 on a 1920px-wide desktop, never smaller
+ * than `min` or larger than `max`.
+ */
+export const AUTO_SCALE = { referenceWidth: 1920, min: 0.85, max: 1.5 } as const;
 
 /**
  * Base capsule geometry per state, in px. `radius` is the island-mode radius;
@@ -36,7 +54,7 @@ export const NOTCH_SIZES: Record<NotchState, { width: number; height: number; ra
   idleMedia: { width: 280, height: 28, radius: 14 },
   hover: { width: 360, height: 100, radius: 16 },
   expanded: { width: 420, height: 280, radius: 24 },
-  settings: { width: 420, height: 276, radius: 24 },
+  settings: { width: 420, height: 308, radius: 24 },
   dragOver: { width: 340, height: 100, radius: 24 },
 };
 
@@ -44,6 +62,7 @@ export const NOTCH_SIZES: Record<NotchState, { width: number; height: number; ra
 export const DEFAULT_SETTINGS: AppSettings = {
   display_mode: "island",
   opacity: 0.95,
+  scale: "auto",
   active_widgets: { media: true, system: true, file_shelf: true, scratchpad: true },
   dnd_enabled: false,
 };
@@ -63,8 +82,22 @@ export const BATTERY_LOW_THRESHOLD = 15;
 /** Battery saver stretches every polling interval by this factor. */
 export const BATTERY_SAVER_POLL_FACTOR = 2;
 
-/** How long the capsule takes to fade when a fullscreen app comes or goes, in s. */
+/** How long the capsule takes to fade out when a fullscreen app takes over, in s. */
 export const VISIBILITY_FADE_S = 0.3;
+
+/**
+ * Pop-in when the capsule returns (the game was minimized, the fullscreen
+ * video ended): a lively spring that overshoots and settles.
+ */
+export const SPRING_ENTRANCE: Transition = {
+  type: "spring",
+  stiffness: 450,
+  damping: 22,
+};
+
+/** Island mode pop-in: the capsule drops in from this far above, at this scale. */
+export const ENTRANCE_OFFSET_Y = -30;
+export const ENTRANCE_SCALE_KEYFRAMES = [0.85, 1.05, 1];
 
 /** Growing: a touch of overshoot, settles quickly. */
 export const SPRING_EXPAND: Transition = {
@@ -100,6 +133,13 @@ export const TWEEN_REDUCED: Transition = {
 /** Anti-flicker hover delays, in ms. */
 export const HOVER_ENTER_DELAY_MS = 150;
 export const HOVER_LEAVE_DELAY_MS = 600;
+
+/**
+ * Enter delay for the ultra-slim bar. Longer, because the bar lies over
+ * another app's tabs: only a deliberate rest of the cursor should open it,
+ * not a pass on the way to a tab.
+ */
+export const HOVER_ENTER_DELAY_COMPACT_MS = 300;
 
 /** Media polling intervals, in ms. */
 export const MEDIA_POLL_IDLE_MS = 1000;

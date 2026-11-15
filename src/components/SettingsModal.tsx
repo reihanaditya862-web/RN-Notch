@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
-import { Blend, Cpu, Moon, Music, Paperclip, PenLine, X } from "lucide-react";
-import { OPACITY_MAX, OPACITY_MIN } from "../lib/constants";
+import { Blend, Cpu, Moon, Music, Paperclip, PenLine, Power, Scaling, X } from "lucide-react";
+import { useAutostart } from "../hooks/useAutostart";
+import { OPACITY_MAX, OPACITY_MIN, SCALE_OPTIONS } from "../lib/constants";
 import type { ActiveWidgets, DisplayMode } from "../lib/types";
 import { useNotchStore } from "../stores/notchStore";
 import { DigitText } from "./widgets/DigitText";
@@ -104,18 +105,22 @@ interface SettingsModalProps {
 }
 
 /**
- * Settings panel, shown inside the capsule (420x276): display mode, opacity,
- * which widgets are on, and Do Not Disturb.
+ * Settings panel, shown inside the capsule (420x308): display mode, size,
+ * opacity, which widgets are on, Do Not Disturb and Start with Windows.
  *
  * Every control changes the store at once, so the capsule previews it live;
  * `useSettingsSync` writes the result to `%APPDATA%\rn-notch\settings.json`.
+ * "Start with Windows" is the exception: it is Windows' own startup entry,
+ * switched through `useAutostart`.
  */
 export function SettingsModal({ onClose }: SettingsModalProps) {
   const settings = useNotchStore((store) => store.settings);
   const setDisplayMode = useNotchStore((store) => store.setDisplayMode);
   const setOpacity = useNotchStore((store) => store.setOpacity);
+  const setScale = useNotchStore((store) => store.setScale);
   const setWidgetActive = useNotchStore((store) => store.setWidgetActive);
   const toggleDnd = useNotchStore((store) => store.toggleDnd);
+  const autostart = useAutostart();
 
   const opacityPercent = Math.round(settings.opacity * 100);
   const opacityMin = Math.round(OPACITY_MIN * 100);
@@ -160,6 +165,43 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         />
       </div>
 
+      <div className="flex h-7 items-center gap-2">
+        <Scaling
+          size={14}
+          strokeWidth={1.5}
+          aria-hidden="true"
+          className="mx-1 shrink-0 text-notch-tertiary"
+        />
+        <span className="w-14 shrink-0 text-[12px] leading-4 text-notch-primary">Size</span>
+        <div
+          role="radiogroup"
+          aria-label="Size"
+          className="grid h-full min-w-0 flex-1 grid-cols-5 gap-1 rounded-lg bg-notch-surface p-1"
+        >
+          {SCALE_OPTIONS.map((option) => {
+            const isSelected = option.value === settings.scale;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={isSelected}
+                onClick={() => setScale(option.value)}
+                className={[
+                  "rounded-md text-[11px] leading-none font-medium transition-colors duration-100",
+                  FOCUS_RING,
+                  isSelected
+                    ? "bg-notch-surface-hover text-notch-primary"
+                    : "text-notch-secondary hover:text-notch-primary",
+                ].join(" ")}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <label className="flex h-[22px] items-center gap-2">
         <Blend
           size={14}
@@ -199,13 +241,21 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         ))}
       </div>
 
-      <ToggleRow
-        icon={<Moon size={14} strokeWidth={1.5} />}
-        label="Do Not Disturb - stay collapsed until clicked"
-        isOn={settings.dnd_enabled}
-        onChange={toggleDnd}
-        tone="dnd"
-      />
+      <div className="grid grid-cols-2 gap-1.5">
+        <ToggleRow
+          icon={<Moon size={14} strokeWidth={1.5} />}
+          label="Do Not Disturb"
+          isOn={settings.dnd_enabled}
+          onChange={toggleDnd}
+          tone="dnd"
+        />
+        <ToggleRow
+          icon={<Power size={14} strokeWidth={1.5} />}
+          label="Start with Windows"
+          isOn={autostart.isEnabled ?? false}
+          onChange={autostart.setEnabled}
+        />
+      </div>
 
       <p className="truncate font-mono text-[10px] leading-3 tracking-[-0.02em] text-notch-tertiary">
         Saved to %APPDATA%\rn-notch\settings.json

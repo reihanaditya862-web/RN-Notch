@@ -3,6 +3,7 @@ import {
   useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
   type FocusEvent,
   type MouseEvent,
@@ -26,6 +27,9 @@ import { saveSettingsNow, useSettingsSync } from "../hooks/useSettingsSync";
 import { useSystemInfo } from "../hooks/useSystemInfo";
 import {
   APP_NAME,
+  ENTRANCE_OFFSET_Y,
+  ENTRANCE_SCALE_KEYFRAMES,
+  HOVER_ENTER_DELAY_COMPACT_MS,
   HOVER_ENTER_DELAY_MS,
   HOVER_LEAVE_DELAY_MS,
   MEDIA_POLL_HOVER_MS,
@@ -33,6 +37,7 @@ import {
   SHADOW_NONE,
   SHADOW_RAISED,
   SPRING_COLLAPSE,
+  SPRING_ENTRANCE,
   SPRING_EXPAND,
   SPRING_EXPANDED,
   SYSTEM_POLL_EXPANDED_MS,
@@ -98,33 +103,40 @@ function topCurveOf(shape: NotchShape): number {
  *
  * The ears of the notch are decoration and are not reported, so they stay
  * click-through. Passing `null` for the shape makes nothing clickable.
+ *
+ * Shapes are given in the capsule's own (unscaled) units; `scale` converts
+ * them to the window pixels Rust works in. A `passive` capsule reports hover
+ * but lets clicks through to the app underneath (the ultra-slim bar).
  */
 function reportHitRegions(
   shape: NotchShape | null,
   menu: MenuPosition | null,
-  watchOutsideClicks: boolean,
+  options: { scale: number; isPassive: boolean; watchOutsideClicks: boolean },
 ): void {
   if (!isTauri()) return;
 
+  const { scale, isPassive, watchOutsideClicks } = options;
   const regions = [];
   if (shape) {
     regions.push({
-      x: (window.innerWidth - shape.width) / 2,
-      y: shape.top,
-      width: shape.width,
-      height: shape.height,
-      topRadius: shape.topRadius,
-      bottomRadius: shape.bottomRadius,
+      x: (window.innerWidth - shape.width * scale) / 2,
+      y: shape.top * scale,
+      width: shape.width * scale,
+      height: shape.height * scale,
+      topRadius: shape.topRadius * scale,
+      bottomRadius: shape.bottomRadius * scale,
+      passive: isPassive,
     });
   }
   if (shape && menu) {
     regions.push({
-      x: menu.x,
-      y: menu.y,
-      width: CONTEXT_MENU_WIDTH,
-      height: CONTEXT_MENU_HEIGHT,
-      topRadius: CONTEXT_MENU_RADIUS,
-      bottomRadius: CONTEXT_MENU_RADIUS,
+      x: menu.x * scale,
+      y: menu.y * scale,
+      width: CONTEXT_MENU_WIDTH * scale,
+      height: CONTEXT_MENU_HEIGHT * scale,
+      topRadius: CONTEXT_MENU_RADIUS * scale,
+      bottomRadius: CONTEXT_MENU_RADIUS * scale,
+      passive: false,
     });
   }
 
@@ -145,10 +157,15 @@ function reportHitRegions(
  * - `dragOver`  - a file is being dragged over the capsule.
  *
  * Shape (see `getNotchShape`): "island" floats below the top edge as a pill;
- * "notch" touches the edge and flares into it with two ears. While a
- * maximized app is in front, the collapsed capsule turns compact (lower, and
- * closer to the edge) to stay out of the app's tab strip. While a fullscreen
- * app is in front, the capsule fades out and stops polling.
+ * "notch" touches the edge and flares into it with two ears.
+ *
+ * Window awareness (from the Rust window detector):
+ * - An app window under the capsule (a maximized browser): the collapsed
+ *   capsule becomes an ultra-slim 18px bar that lets clicks through to the
+ *   tabs below it. Resting the cursor on it brings it back to full size.
+ * - A fullscreen app: the capsule fades out and stops polling. When that app
+ *   goes away it pops back in - dropping in with a bounce in island mode,
+ *   growing out of the screen edge in notch mode - and its glow pulses once.
  *
  * The outline is one SVG path (fill, hairline border, gradient line), because
  * ears cannot be drawn with `border-radius`. Width, height, position and
@@ -173,31 +190,45 @@ export function NotchContainer() {
   const [isPressing, setIsPressing] = useState(false);
   const [hasTextFocus, setHasTextFocus] = useState(false);
   const [menu, setMenu] = useState<MenuPosition | null>(null);
+  /** The Rust hover listener is registered; hit regions are re-sent then. */
+  const [isListening, setIsListening] = useState(false);
+  /** Counts pop-ins; a new value replays the landing glow. */
+  const [landingCount, setLandingCount] = useState(0);
 
   const state = useNotchStore((store) => store.state);
   const settings = useNotchStore((store) => store.settings);
+  const uiScale = useNotchStore((store) => store.uiScale);
+  const isReady = useNotchStore((store) => store.isReady);
   const isUserVisible = useNotchStore((store) => store.isVisible);
   const isSettingsOpen = useNotchStore((store) => store.isSettingsOpen);
   const isFullscreenApp = useNotchStore((store) => store.foreground.is_fullscreen);
-  const isMaximizedApp = useNotchStore((store) => store.foreground.is_maximized);
+  const isMaximizedApp = useNotchStore((store) => store.foreground.is_window_maximized);
 
   const widgets = settings.active_widgets;
+  const isNotchMode = settings.display_mode === "notch";
   const isOpen = state === "hover" || state === "expanded";
   const isRaised = !isCollapsedState(state);
-  /** Off screen: hidden from the tray, or stepping aside for a fullscreen app. */
-  const isHidden = !isUserVisible || isFullscreenApp;
-  /** The collapsed capsule is in its low shape because a maximized app is in front. */
-  const isCompact = isMaximizedApp && !isRaised;
+  /**
+   * Off screen: hidden from the tray, stepping aside for a fullscreen app, or
+   * still waiting for the saved settings at startup.
+   */
+  const isHidden = !isReady || !isUserVisible || isFullscreenApp;
 
-  const shape = useMemo(
-    () => getNotchShape(state, settings, isMaximizedApp),
-    [state, settings, isMaximizedApp],
-  );
-
+  // Over a maximized app the cursor has to rest longer before it counts, so
+  // a pass on the way to a browser tab does not open the capsule.
   const { isActive: isHoverOpen, enter, leave, open } = useHoverDelay({
-    enterDelay: HOVER_ENTER_DELAY_MS,
+    enterDelay: isMaximizedApp ? HOVER_ENTER_DELAY_COMPACT_MS : HOVER_ENTER_DELAY_MS,
     leaveDelay: HOVER_LEAVE_DELAY_MS,
   });
+
+  // Ultra-slim applies while an app window is under the capsule and the user
+  // is not on it. Resting the cursor there (isHoverOpen) restores full size,
+  // also in states where hovering opens nothing (Do Not Disturb).
+  const isSlim = isMaximizedApp && !isHoverOpen;
+  /** The capsule is currently drawn as the ultra-slim bar. */
+  const isCompact = isSlim && !isRaised;
+
+  const shape = useMemo(() => getNotchShape(state, settings, isSlim), [state, settings, isSlim]);
 
   useSettingsSync();
   useForegroundState();
@@ -289,16 +320,10 @@ export function NotchContainer() {
     })
       .then((stop) => {
         keep(stop);
-        // Now that we are listening, ask for the current hover state: the
-        // cursor may already have been on the capsule before this point.
-        if (!disposed) {
-          const store = useNotchStore.getState();
-          reportHitRegions(
-            getNotchShape(store.state, store.settings, store.foreground.is_maximized),
-            null,
-            store.isSettingsOpen,
-          );
-        }
+        // Now that we are listening, the hit regions are sent again (see the
+        // effect below): Rust answers with the current hover state, which
+        // matters when the cursor was already on the capsule.
+        if (!disposed) setIsListening(true);
       })
       .catch(warn);
 
@@ -321,12 +346,18 @@ export function NotchContainer() {
   // while the capsule is off screen.
   const watchOutsideClicks = !isHidden && (menu !== null || isSettingsOpen);
   useEffect(() => {
-    const report = () => reportHitRegions(isHidden ? null : shape, menu, watchOutsideClicks);
+    const report = () =>
+      reportHitRegions(isHidden ? null : shape, menu, {
+        scale: uiScale,
+        // The ultra-slim bar is hover-only: clicks reach the tab underneath.
+        isPassive: isCompact,
+        watchOutsideClicks,
+      });
 
     report();
     window.addEventListener("resize", report);
     return () => window.removeEventListener("resize", report);
-  }, [shape, menu, watchOutsideClicks, isHidden]);
+  }, [shape, menu, watchOutsideClicks, isHidden, uiScale, isCompact, isListening]);
 
   // --- Engagement: held mouse button and text focus -------------------------
 
@@ -382,7 +413,17 @@ export function NotchContainer() {
     if ((event.target as Element).closest(TEXT_FIELD_SELECTOR)) return;
 
     event.preventDefault();
-    setMenu(placeContextMenu(event.clientX, event.clientY, window.innerWidth, window.innerHeight));
+    // Mouse coordinates are window pixels; the menu is laid out inside the
+    // zoomed root, so everything is converted to its unscaled units.
+    const scale = useNotchStore.getState().uiScale;
+    setMenu(
+      placeContextMenu(
+        event.clientX / scale,
+        event.clientY / scale,
+        window.innerWidth / scale,
+        window.innerHeight / scale,
+      ),
+    );
   }, []);
 
   const handleQuit = useCallback(() => {
@@ -457,6 +498,66 @@ export function NotchContainer() {
     transition,
   ]);
 
+  // --- Pop-in when the capsule returns ------------------------------------------
+  //
+  // The capsule was off screen (a fullscreen game or video, or hidden from
+  // the tray) and is shown again. Declared after the geometry effect above
+  // on purpose: both may start in the same commit, and the one that runs
+  // last decides the animation.
+  const entranceY = useMotionValue(0);
+  const entranceScale = useMotionValue(1);
+  const wasHidden = useRef(isHidden);
+
+  useEffect(() => {
+    const isReturning = wasHidden.current && !isHidden;
+    wasHidden.current = isHidden;
+    if (!isReturning) return;
+
+    // Whatever happened while the capsule was invisible (settings loading at
+    // startup, a mode switch from the tray) must not be seen as a morph now:
+    // width and position start at their final values.
+    width.jump(shape.width);
+    top.jump(shape.top);
+
+    // Battery saver and reduced motion keep the plain fade.
+    if (reducedMotion || isBatterySaver) {
+      height.jump(shape.height);
+      topCurve.jump(targetCurve);
+      bottomRadius.jump(shape.bottomRadius);
+      return;
+    }
+
+    setLandingCount((count) => count + 1);
+
+    if (isNotchMode) {
+      // Grow out of the screen edge: no height, no ears, no corners at first,
+      // then everything springs to its shape and overshoots a little, like a
+      // drop forming on the bezel.
+      height.jump(0);
+      topCurve.jump(0);
+      bottomRadius.jump(0);
+      animate(height, shape.height, SPRING_ENTRANCE);
+      animate(topCurve, targetCurve, SPRING_ENTRANCE);
+      animate(bottomRadius, shape.bottomRadius, SPRING_ENTRANCE);
+      return;
+    }
+
+    // Island: drop in from above with a bounce, swelling past full size once.
+    height.jump(shape.height);
+    topCurve.jump(targetCurve);
+    bottomRadius.jump(shape.bottomRadius);
+    entranceY.jump(ENTRANCE_OFFSET_Y);
+    entranceScale.jump(ENTRANCE_SCALE_KEYFRAMES[0]);
+    animate(entranceY, 0, SPRING_ENTRANCE);
+    animate(entranceScale, ENTRANCE_SCALE_KEYFRAMES, {
+      duration: 0.5,
+      times: [0, 0.55, 1],
+      ease: "easeOut",
+    });
+    // Deliberately keyed on visibility alone: only becoming visible starts
+    // the pop-in, and the shape it lands in is the one current at that moment.
+  }, [isHidden]);
+
   const outline = [width, height, topCurve, bottomRadius];
   const fillPath = useTransform(outline, ([w, h, curve, bottom]: number[]) =>
     buildFillPath(w, h, curve, bottom),
@@ -523,7 +624,8 @@ export function NotchContainer() {
         data-compact={isCompact}
         initial={false}
         animate={{ opacity: isHidden ? 0 : 1 }}
-        transition={{ duration: VISIBILITY_FADE_S, ease: "easeOut" }}
+        // Leaving is a calm fade; returning is quick, the pop-in does the rest.
+        transition={{ duration: isHidden ? VISIBILITY_FADE_S : 0.12, ease: "easeOut" }}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
         onPointerDown={() => setIsPressing(true)}
@@ -531,7 +633,14 @@ export function NotchContainer() {
         onBlur={handleBlur}
         onClick={handleClick}
         onContextMenu={handleContextMenu}
-        style={{ width, height, top }}
+        style={{
+          width,
+          height,
+          top,
+          y: entranceY,
+          scale: entranceScale,
+          transformOrigin: "50% 0%",
+        }}
         className={[
           "absolute left-1/2 -translate-x-1/2",
           isHidden ? "pointer-events-none" : "",
@@ -560,14 +669,22 @@ export function NotchContainer() {
             fill={`rgb(9 9 11 / ${settings.opacity})`}
             style={{ transition: "fill 200ms ease" }}
           />
-          {/* Soft glow behind the gradient line; removed under battery saver. */}
+          {/*
+            Soft glow behind the gradient line; removed under battery saver.
+            After a pop-in it pulses once: the key remounts the path, which
+            restarts the one-shot `notch-landing` animation.
+          */}
           <motion.path
+            key={landingCount}
             d={strokePath}
             fill="none"
             stroke={`url(#${gradientId})`}
             strokeWidth="3"
             opacity={isActive ? 0.5 : 0}
-            className="notch-outline notch-outline-glow"
+            className={[
+              "notch-outline notch-outline-glow",
+              landingCount > 0 ? "notch-landing" : "",
+            ].join(" ")}
           />
           <motion.path
             d={strokePath}
@@ -597,6 +714,15 @@ export function NotchContainer() {
           }}
           className="absolute inset-0 overflow-hidden transition-shadow duration-200"
         >
+          {/* Faint blue and purple light inside the capsule; it breathes while music plays. */}
+          <div
+            aria-hidden="true"
+            className={[
+              "notch-ambient",
+              isMediaPlaying && !settings.dnd_enabled ? "notch-ambient-breathing" : "",
+            ].join(" ")}
+          />
+
           {/*
             Each view has the fixed size of its own state and is centered in
             the capsule, so its layout never reflows while the capsule is
@@ -640,6 +766,8 @@ export function NotchContainer() {
               y={menu.y}
               displayMode={settings.display_mode}
               isDndEnabled={settings.dnd_enabled}
+              scale={settings.scale}
+              onSelectScale={useNotchStore.getState().setScale}
               nowPlaying={nowPlaying}
               onSwitchMode={useNotchStore.getState().toggleDisplayMode}
               onToggleDnd={useNotchStore.getState().toggleDnd}

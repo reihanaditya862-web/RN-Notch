@@ -206,12 +206,64 @@ body {
   filter: blur(3px);
 }
 
+/*
+ * One pulse of the glow as the capsule lands after popping back in (a game
+ * was minimized, a fullscreen video ended). `backwards` holds the first frame
+ * during the delay; afterwards the glow returns to its normal opacity.
+ */
+@keyframes notch-landing {
+  0% {
+    opacity: 0;
+  }
+  35% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.2;
+  }
+}
+
+.notch-landing {
+  animation: notch-landing 0.9s ease-out 0.28s backwards;
+}
+
+/*
+ * Ambient light inside the capsule: Google blue from the top left, purple
+ * from the bottom right, over the matte black fill. Kept faint (16%) so the
+ * black stays black and the type stays sharp.
+ */
+.notch-ambient {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 170% at 0% 0%, rgb(66 133 244 / 0.16), transparent 62%),
+    radial-gradient(120% 170% at 100% 100%, rgb(155 81 224 / 0.16), transparent 62%);
+}
+
+/* While music plays the light breathes slowly. Opacity only: compositor work. */
+@keyframes notch-breathe {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.notch-ambient-breathing {
+  animation: notch-breathe 4.5s ease-in-out infinite;
+}
+
 /* Looping animations stop when the system asks for reduced motion... */
 @media (prefers-reduced-motion: reduce) {
   .notch-pulse,
   .notch-blink,
   .notch-drop-pulse,
-  .notch-wave-bar {
+  .notch-wave-bar,
+  .notch-ambient-breathing,
+  .notch-landing {
     animation: none;
   }
 }
@@ -223,7 +275,9 @@ body {
 :root[data-battery-saver] .notch-pulse,
 :root[data-battery-saver] .notch-blink,
 :root[data-battery-saver] .notch-drop-pulse,
-:root[data-battery-saver] .notch-wave-bar {
+:root[data-battery-saver] .notch-wave-bar,
+:root[data-battery-saver] .notch-ambient-breathing,
+:root[data-battery-saver] .notch-landing {
   animation: none;
 }
 

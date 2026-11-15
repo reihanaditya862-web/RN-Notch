@@ -7,11 +7,13 @@ import {
   SHELF_FILE_TTL_MS,
   SHELF_MAX_FILES,
 } from "../lib/constants";
+import { isScaleOption } from "../lib/scale";
 import type {
   ActiveWidgets,
   AppSettings,
   ForegroundState,
   NotchState,
+  ScaleOption,
   ShelfFile,
   SystemInfo,
 } from "../lib/types";
@@ -34,11 +36,24 @@ interface NotchStore extends StateInputs {
   state: NotchState;
   previousState: NotchState;
 
+  /**
+   * The saved settings have arrived. Until then nothing is drawn, so the
+   * capsule never flashes in the default mode or size before taking the
+   * user's.
+   */
+  isReady: boolean;
+
   /** False while the capsule is hidden from the tray; polling pauses then. */
   isVisible: boolean;
 
   /** What is in front of the capsule: a fullscreen app, a maximized window. */
   foreground: ForegroundState;
+
+  /**
+   * The size factor in effect (1 = 100%), resolved from `settings.scale` by
+   * `useUiScale`. Everything is drawn at this zoom.
+   */
+  uiScale: number;
 
   /** Latest hardware snapshot from Rust; null until the first poll lands. */
   systemInfo: SystemInfo | null;
@@ -56,7 +71,9 @@ interface NotchStore extends StateInputs {
   openSettings: () => void;
   closeSettings: () => void;
   setVisible: (visible: boolean) => void;
+  markReady: () => void;
   setForeground: (foreground: ForegroundState) => void;
+  setUiScale: (scale: number) => void;
 
   /**
    * Replaces the settings. Used for values coming from Rust (startup, tray);
@@ -68,6 +85,8 @@ interface NotchStore extends StateInputs {
   toggleDisplayMode: () => void;
   setDisplayMode: (mode: AppSettings["display_mode"]) => void;
   setOpacity: (opacity: number) => void;
+  /** Picks the capsule size: "auto" or a fixed percentage. */
+  setScale: (scale: ScaleOption) => void;
   setWidgetActive: (widget: keyof ActiveWidgets, active: boolean) => void;
   toggleDnd: () => void;
 
@@ -156,8 +175,10 @@ export const useNotchStore = create<NotchStore>()(
         isMediaPlaying: false,
         settings: DEFAULT_SETTINGS,
 
+        isReady: false,
         isVisible: true,
-        foreground: { is_fullscreen: false, is_maximized: false },
+        foreground: { is_fullscreen: false, is_window_maximized: false },
+        uiScale: 1,
 
         systemInfo: null,
         volumeHoldUntil: 0,
@@ -185,18 +206,30 @@ export const useNotchStore = create<NotchStore>()(
           if (get().isSettingsOpen) applyInputs({ isSettingsOpen: false });
         },
         setVisible: (visible) => set({ isVisible: visible }),
+        markReady: () => {
+          if (!get().isReady) set({ isReady: true });
+        },
         setForeground: (foreground) => {
           const current = get().foreground;
           if (
             current.is_fullscreen !== foreground.is_fullscreen ||
-            current.is_maximized !== foreground.is_maximized
+            current.is_window_maximized !== foreground.is_window_maximized
           ) {
             set({ foreground });
           }
         },
+        setUiScale: (scale) => {
+          if (scale !== get().uiScale) set({ uiScale: scale });
+        },
 
         applySettings: (settings) =>
-          applyInputs({ settings: { ...settings, opacity: clampOpacity(settings.opacity) } }),
+          applyInputs({
+            settings: {
+              ...settings,
+              opacity: clampOpacity(settings.opacity),
+              scale: isScaleOption(settings.scale) ? settings.scale : DEFAULT_SETTINGS.scale,
+            },
+          }),
         toggleDisplayMode: () =>
           patchSettings({
             display_mode: get().settings.display_mode === "island" ? "notch" : "island",
@@ -207,6 +240,9 @@ export const useNotchStore = create<NotchStore>()(
         setOpacity: (opacity) => {
           const next = clampOpacity(opacity);
           if (next !== get().settings.opacity) patchSettings({ opacity: next });
+        },
+        setScale: (scale) => {
+          if (scale !== get().settings.scale) patchSettings({ scale });
         },
         setWidgetActive: (widget, active) => {
           const widgets = get().settings.active_widgets;

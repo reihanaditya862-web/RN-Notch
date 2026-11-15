@@ -9,7 +9,7 @@ use std::thread;
 use std::time::Duration;
 
 use serde::Deserialize;
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, State, WebviewWindow};
+use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, State, WebviewWindow};
 use windows::Win32::Foundation::{HWND, POINT, RECT};
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -17,11 +17,11 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetWindowRect};
 
-use commands::audio;
-use commands::fullscreen::{self, ForegroundWatch};
 use commands::media::{self, MediaState};
 use commands::settings::{self, SETTINGS_DIR, SETTINGS_FILE, SettingsState};
 use commands::system::{self, SystemState};
+use commands::window_detector::{self, ForegroundWatch};
+use commands::{audio, autostart};
 
 /// Name shown to the user (tray tooltip, menu texts).
 pub(crate) const APP_NAME: &str = "RN Notch";
@@ -46,6 +46,15 @@ const CURSOR_POLL_FAR: Duration = Duration::from_millis(40);
 /// How far around the window (physical px) the cursor counts as "close".
 const NEAR_MARGIN_PX: i32 = 160;
 
+/// Window size at 100% scale, in logical px; keep in step with the `width`
+/// and `height` in `tauri.conf.json`.
+const BASE_WINDOW_WIDTH: f64 = 520.0;
+const BASE_WINDOW_HEIGHT: f64 = 380.0;
+
+/// Range of capsule scales the window can be sized for.
+const WINDOW_SCALE_MIN: f64 = 0.75;
+const WINDOW_SCALE_MAX: f64 = 2.0;
+
 /// A clickable shape in logical (CSS) pixels, relative to the window's
 /// top-left corner: a rectangle whose top and bottom corners can be rounded
 /// independently. The capsule is one (flat on top in notch mode, a full pill
@@ -62,6 +71,12 @@ struct HitRegion {
     top_radius: f64,
     #[serde(default)]
     bottom_radius: f64,
+    /// A passive shape reports hover but does not take the mouse: clicks on
+    /// it still go to the window underneath. Used for the ultra-slim bar over
+    /// a maximized app, so a tab that happens to be below it stays clickable;
+    /// resting the cursor on the bar is what opens the capsule.
+    #[serde(default)]
+    passive: bool,
 }
 
 impl HitRegion {
@@ -230,6 +245,27 @@ fn quit_app(app: AppHandle) {
     app.exit(0);
 }
 
+/// Resizes the (transparent) window for a capsule scale and re-centers it.
+///
+/// The window is only as large as the biggest capsule state needs. At 175%
+/// the dashboard would not fit the base size, so the window grows with the
+/// scale the user picked in Settings. `scale` is a factor: 1.0 = 100%.
+#[tauri::command]
+fn set_window_scale(window: WebviewWindow, scale: f64) -> Result<(), String> {
+    if !scale.is_finite() {
+        return Err(format!("invalid window scale: {scale}"));
+    }
+    let scale = scale.clamp(WINDOW_SCALE_MIN, WINDOW_SCALE_MAX);
+
+    window
+        .set_size(LogicalSize::new(
+            (BASE_WINDOW_WIDTH * scale).round(),
+            (BASE_WINDOW_HEIGHT * scale).round(),
+        ))
+        .map_err(|error| error.to_string())?;
+    center_top(&window).map_err(|error| error.to_string())
+}
+
 /// Centers the window horizontally on the primary monitor and pins it to the
 /// top edge.
 ///
@@ -255,12 +291,21 @@ pub(crate) fn center_top(window: &WebviewWindow) -> tauri::Result<()> {
     window.set_position(PhysicalPosition::new(x, y))
 }
 
-/// Where the cursor is, relative to the clickable shapes and the notch window.
+/// Where the cursor is, relative to the reported shapes and the notch window.
 struct CursorProbe {
-    /// The cursor is on one of the shapes.
-    inside: bool,
+    /// The cursor is on one of the shapes, passive or not.
+    hovering: bool,
+    /// The cursor is on a shape that takes the mouse.
+    interactive: bool,
     /// The cursor is on or close to the notch window.
     near: bool,
+}
+
+/// What the watcher remembers from one step to the next.
+#[derive(Default)]
+struct WatcherMemory {
+    button_was_down: bool,
+    was_hovering: bool,
 }
 
 /// Reads the cursor straight from Win32. These calls are cheap and do not go
@@ -285,8 +330,16 @@ fn probe_cursor(hwnd: HWND, regions: &[HitRegion]) -> Option<CursorProbe> {
         && cursor.y >= window_rect.top - NEAR_MARGIN_PX
         && cursor.y < window_rect.bottom + NEAR_MARGIN_PX;
 
+    let mut hovering = false;
+    let mut interactive = false;
+    for region in regions.iter().filter(|region| region.contains(x, y)) {
+        hovering = true;
+        interactive |= !region.passive;
+    }
+
     Some(CursorProbe {
-        inside: regions.iter().any(|region| region.contains(x, y)),
+        hovering,
+        interactive,
         near,
     })
 }
@@ -323,10 +376,10 @@ fn any_mouse_button_down() -> bool {
 /// Body of the watcher thread. Runs for the lifetime of the app.
 fn watch_cursor(window: WebviewWindow, raw_hwnd: isize) {
     let hwnd = HWND(raw_hwnd as *mut c_void);
-    let mut button_was_down = false;
+    let mut memory = WatcherMemory::default();
 
     loop {
-        let fast = check_cursor(&window, hwnd, &mut button_was_down);
+        let fast = check_cursor(&window, hwnd, &mut memory);
         thread::sleep(if fast {
             CURSOR_POLL_NEAR
         } else {
@@ -338,15 +391,15 @@ fn watch_cursor(window: WebviewWindow, raw_hwnd: isize) {
 /// One watcher step. Returns whether the next step should come quickly: the
 /// cursor is close to the window, or outside clicks are being watched (a
 /// click is short, so it needs the fast interval wherever the cursor is).
-fn check_cursor(window: &WebviewWindow, hwnd: HWND, button_was_down: &mut bool) -> bool {
+fn check_cursor(window: &WebviewWindow, hwnd: HWND, memory: &mut WatcherMemory) -> bool {
     let state = window.state::<ClickThroughState>();
     let watching = state.watch_outside_clicks.load(Ordering::Relaxed);
 
     // Tracked on every step, so a button already held when watching starts
     // is not mistaken for a new press.
     let button_down = any_mouse_button_down();
-    let pressed = button_down && !*button_was_down;
-    *button_was_down = button_down;
+    let pressed = button_down && !memory.button_was_down;
+    memory.button_was_down = button_down;
 
     let regions = match state.regions.lock() {
         Ok(guard) => guard.clone(),
@@ -356,14 +409,18 @@ fn check_cursor(window: &WebviewWindow, hwnd: HWND, button_was_down: &mut bool) 
         return watching;
     };
 
-    // Announce every change, and also answer a pending resync request.
-    let resync = state.resync.swap(false, Ordering::Relaxed);
-    let changed = state.apply(window, !probe.inside).unwrap_or(false);
-    if changed || resync {
-        let _ = window.emit(HOVER_EVENT, probe.inside);
-    }
+    // The window takes the mouse only on a shape that wants it; a passive
+    // shape leaves click-through on.
+    let _ = state.apply(window, !probe.interactive);
 
-    if watching && pressed && !probe.inside {
+    // Hover is announced on every change, and again when a resync is pending.
+    let resync = state.resync.swap(false, Ordering::Relaxed);
+    if probe.hovering != memory.was_hovering || resync {
+        let _ = window.emit(HOVER_EVENT, probe.hovering);
+    }
+    memory.was_hovering = probe.hovering;
+
+    if watching && pressed && !probe.hovering {
         let _ = window.emit(OUTSIDE_CLICK_EVENT, ());
     }
 
@@ -374,6 +431,12 @@ fn check_cursor(window: &WebviewWindow, hwnd: HWND, button_was_down: &mut bool) 
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        // "Start with Windows": registers this executable under the app's name.
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .app_name(APP_NAME)
+                .build(),
+        )
         .manage(ClickThroughState {
             regions: Mutex::new(Vec::new()),
             ignoring: Mutex::new(true),
@@ -389,8 +452,12 @@ pub fn run() {
             set_hit_regions,
             reposition_center,
             quit_app,
-            fullscreen::get_foreground_state,
-            fullscreen::is_fullscreen_app_active,
+            set_window_scale,
+            window_detector::get_foreground_state,
+            window_detector::is_window_maximized,
+            window_detector::is_fullscreen,
+            autostart::get_autostart,
+            autostart::set_autostart,
             settings::load_settings,
             settings::save_settings,
             media::get_media_info,
@@ -433,10 +500,10 @@ pub fn run() {
                 eprintln!("could not center the notch window: {error}");
             }
 
-            // Fullscreen auto-hide and the compact shape are extras: the app
-            // still works if their watcher cannot start.
-            if let Err(error) = fullscreen::spawn_watcher(window.clone()) {
-                eprintln!("could not start the foreground watcher: {error}");
+            // Fullscreen auto-hide and the ultra-slim shape are extras: the
+            // app still works if the detector cannot start.
+            if let Err(error) = window_detector::spawn_watcher(window.clone()) {
+                eprintln!("could not start the window detector: {error}");
             }
 
             spawn_cursor_watcher(window)?;
@@ -459,6 +526,7 @@ mod tests {
         height: 28.0,
         top_radius: 14.0,
         bottom_radius: 14.0,
+        passive: false,
     };
 
     /// Notch mode, idle: 180x28 flush with the top edge, flat on top, with
@@ -470,6 +538,7 @@ mod tests {
         height: 28.0,
         top_radius: 0.0,
         bottom_radius: 16.0,
+        passive: false,
     };
 
     #[test]

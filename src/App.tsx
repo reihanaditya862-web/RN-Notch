@@ -1,10 +1,16 @@
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { NotchContainer } from "./components/NotchContainer";
+import { useUiScale } from "./hooks/useUiScale";
 import { APP_NAME } from "./lib/constants";
 
 function App() {
+  // The size the user picked (Auto, 100% ... 175%). Applied as CSS zoom, so
+  // width, height, type, padding and the notch's ears all scale together;
+  // the hook also resizes the transparent window to fit.
+  const scale = useUiScale();
+
   return (
-    <main className="relative h-full w-full">
+    <main className="relative h-full w-full" style={{ zoom: scale }}>
       {/*
         Last line of defence. Each widget has its own boundary inside; if the
         capsule itself fails, a small static pill stays on screen instead of
