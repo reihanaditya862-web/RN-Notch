@@ -8,6 +8,7 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, Tray
 use tauri::{AppHandle, Emitter, Manager, Wry};
 
 use crate::commands::settings::{self, AppSettings, DisplayMode};
+use crate::visibility::{self, Visibility};
 use crate::{APP_NAME, NOTCH_LABEL, center_top};
 
 const TRAY_ID: &str = "main";
@@ -105,28 +106,19 @@ pub fn sync(app: &AppHandle, settings: &AppSettings) {
     }
 }
 
-/// Shows the capsule if it is hidden, hides it otherwise.
+/// Shows the capsule if the user had hidden it, hides it otherwise.
 fn toggle_visibility(app: &AppHandle) {
-    let Some(window) = app.get_webview_window(NOTCH_LABEL) else {
-        return;
-    };
-    let visible = window.is_visible().unwrap_or(true);
+    let visible = app.state::<Visibility>().is_user_visible();
     set_visibility(app, !visible);
 }
 
+/// Applies the user's Show/Hide choice. While a fullscreen app is in front
+/// the window stays hidden either way; the choice takes effect afterwards.
 fn set_visibility(app: &AppHandle, visible: bool) {
-    let Some(window) = app.get_webview_window(NOTCH_LABEL) else {
-        return;
-    };
-    if window.is_visible().unwrap_or(!visible) == visible {
+    if app.state::<Visibility>().is_user_visible() == visible {
         return;
     }
-
-    let result = if visible { window.show() } else { window.hide() };
-    if let Err(error) = result {
-        eprintln!("could not change the capsule's visibility: {error}");
-        return;
-    }
+    visibility::set_user_visible(app, visible);
 
     if let Some(menu) = app.try_state::<TrayMenu>() {
         let _ = menu.visibility.set_text(visibility_label(visible));

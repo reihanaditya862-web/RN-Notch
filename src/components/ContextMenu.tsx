@@ -241,7 +241,8 @@ export function ContextMenu({
         transformOrigin: "top left",
       }}
       className={[
-        "absolute z-10 border border-white/10 bg-[#121215]/90 font-sans outline-none backdrop-blur-md",
+        // `notch-blur` lets battery saver switch the backdrop blur off.
+        "notch-blur absolute z-10 border border-white/10 bg-[#121215]/90 font-sans outline-none backdrop-blur-md",
         "shadow-[0_8px_24px_rgba(0,0,0,0.45),0_1px_3px_rgba(0,0,0,0.3)]",
       ].join(" ")}
     >

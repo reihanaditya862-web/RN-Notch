@@ -7,8 +7,20 @@ export const APP_NAME = "RN Notch";
 /** Island mode: gap between the top edge of the screen and the capsule, in px. */
 export const ISLAND_TOP_OFFSET = 8;
 
-/** Notch mode: radius of the two bottom corners, in px (the top is flat). */
+/** Island mode while a maximized app is in front: the gap shrinks to this. */
+export const ISLAND_TOP_OFFSET_COMPACT = 3;
+
+/** Notch mode: radius of the two bottom corners, in px. */
 export const NOTCH_BOTTOM_RADIUS = 16;
+
+/**
+ * Notch mode: radius of the two "ears", the concave curves that flare out
+ * from the top corners into the screen edge, like a MacBook's hardware notch.
+ */
+export const NOTCH_EAR_RADIUS = 12;
+
+/** Height of the collapsed capsule while a maximized app is in front, in px. */
+export const COMPACT_HEIGHT = 22;
 
 /**
  * Base capsule geometry per state, in px. `radius` is the island-mode radius;
@@ -20,7 +32,7 @@ export const NOTCH_BOTTOM_RADIUS = 16;
  * biggest state plus its shadow.
  */
 export const NOTCH_SIZES: Record<NotchState, { width: number; height: number; radius: number }> = {
-  idle: { width: 180, height: 28, radius: 14 },
+  idle: { width: 196, height: 28, radius: 14 },
   idleMedia: { width: 280, height: 28, radius: 14 },
   hover: { width: 360, height: 100, radius: 16 },
   expanded: { width: 420, height: 280, radius: 24 },
@@ -41,6 +53,18 @@ export const OPACITY_MAX = 1;
 
 /** A burst of setting changes is written to disk once, this long after the last one. */
 export const SETTINGS_SAVE_DEBOUNCE_MS = 300;
+
+/** Battery saver starts below this level while running on battery. */
+export const BATTERY_SAVER_THRESHOLD = 20;
+
+/** Below this level (on battery) the battery is shown in red. */
+export const BATTERY_LOW_THRESHOLD = 15;
+
+/** Battery saver stretches every polling interval by this factor. */
+export const BATTERY_SAVER_POLL_FACTOR = 2;
+
+/** How long the capsule takes to fade when a fullscreen app comes or goes, in s. */
+export const VISIBILITY_FADE_S = 0.3;
 
 /** Growing: a touch of overshoot, settles quickly. */
 export const SPRING_EXPAND: Transition = {

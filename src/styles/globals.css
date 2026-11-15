@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+/* Display typeface for numbers and song titles. Only this bold cut is bundled. */
+@font-face {
+  font-family: "Formula1";
+  src: url("../assets/fonts/Formula1-Bold.ttf") format("truetype");
+  font-weight: bold;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* Design tokens from dynamic-island-spec.md, section 3.1 */
 :root {
   /* Base */
@@ -38,9 +47,30 @@
   --notch-focus: var(--notch-accent-cyan);
   --notch-dnd: var(--notch-accent-purple);
 
+  /*
+   * Blue-to-purple accent. The light pair is for thin lines and glows on the
+   * black capsule, the deep pair for filled shapes.
+   */
+  --notch-gradient-from: #8ab4f8;
+  --notch-gradient-to: #c58af9;
+  --notch-gradient-deep-from: #4285f4;
+  --notch-gradient-deep-to: #9b51e0;
+  --notch-gradient: linear-gradient(
+    90deg,
+    var(--notch-gradient-deep-from),
+    var(--notch-gradient-deep-to)
+  );
+
   /* Typography */
   --notch-font-text: "Inter Variable", "Inter", system-ui, -apple-system, sans-serif;
   --notch-font-mono: "JetBrains Mono Variable", "JetBrains Mono", "Cascadia Code", "Consolas",
+    monospace;
+  /*
+   * Clock, battery, statistics and song titles. Formula1 only has Latin
+   * glyphs: JetBrains Mono covers what it lacks, and system-ui sits before
+   * the generic monospace so Japanese or Korean titles get a proper UI font.
+   */
+  --notch-font-display: "Formula1", "JetBrains Mono Variable", "JetBrains Mono", system-ui,
     monospace;
   --notch-font-size-xs: 10px;
   --notch-font-size-sm: 12px;
@@ -57,6 +87,7 @@
 @theme inline {
   --font-sans: var(--notch-font-text);
   --font-mono: var(--notch-font-mono);
+  --font-display: var(--notch-font-display);
 
   --color-notch-bg: var(--notch-bg);
   --color-notch-surface: var(--notch-surface);
@@ -131,6 +162,17 @@ body {
   }
 }
 
+/* Music visualizer: each bar stretches from its base. Transform only, so it runs on the compositor. */
+@keyframes notch-wave {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
 .notch-pulse {
   animation: notch-pulse 1s ease-in-out infinite;
 }
@@ -143,12 +185,55 @@ body {
   animation: notch-drop-pulse 1.5s ease-in-out infinite;
 }
 
+.notch-wave-bar {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+  animation: notch-wave 1.1s ease-in-out infinite;
+}
+
+/*
+ * Outline of the capsule (an SVG path, see NotchContainer). The hairline is
+ * always there; the blue-to-purple line and its soft glow fade in while the
+ * capsule is active (cursor on it, media playing, opened).
+ */
+.notch-outline {
+  transition:
+    stroke 200ms ease,
+    opacity 250ms ease;
+}
+
+.notch-outline-glow {
+  filter: blur(3px);
+}
+
+/* Looping animations stop when the system asks for reduced motion... */
 @media (prefers-reduced-motion: reduce) {
   .notch-pulse,
   .notch-blink,
-  .notch-drop-pulse {
+  .notch-drop-pulse,
+  .notch-wave-bar {
     animation: none;
   }
+}
+
+/*
+ * ...and under battery saver (set by useBatterySaver), which also drops the
+ * effects that keep the GPU busy: blur behind the menu and the glow.
+ */
+:root[data-battery-saver] .notch-pulse,
+:root[data-battery-saver] .notch-blink,
+:root[data-battery-saver] .notch-drop-pulse,
+:root[data-battery-saver] .notch-wave-bar {
+  animation: none;
+}
+
+:root[data-battery-saver] .notch-blur {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+:root[data-battery-saver] .notch-outline-glow {
+  display: none;
 }
 
 /* Text fields stay selectable although the rest of the UI is not. */

@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Music, Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import type { MediaInfo } from "../../lib/types";
+import { DigitText } from "./DigitText";
 
 interface MediaPillProps {
   /** The active session, or null to show the "nothing playing" state. */
@@ -97,6 +98,9 @@ export function MediaPill({
   const hasTimeline = hasMedia && media.duration_ms > 0;
   const progress = hasTimeline ? Math.min(1, media.position_ms / media.duration_ms) : 0;
   const trackKey = hasMedia ? `${media.source}|${media.title}|${media.artist}` : "none";
+  const timeline = hasTimeline
+    ? `${formatDuration(media.position_ms)} / ${formatDuration(media.duration_ms)}`
+    : "";
 
   return (
     <div className={`flex h-full w-full flex-col justify-between ${className}`}>
@@ -124,7 +128,7 @@ export function MediaPill({
         <div className="min-w-0 flex-1">
           <TruncatedText
             text={hasMedia ? media.title : "Nothing playing"}
-            className="text-[13px] leading-[18px] font-medium text-notch-primary"
+            className="font-display text-[13px] leading-[18px] font-bold text-notch-primary"
           />
           <TruncatedText
             text={
@@ -150,22 +154,28 @@ export function MediaPill({
         aria-valuenow={Math.round(progress * 100)}
         className="h-[3px] w-full overflow-hidden rounded-full bg-white/10"
       >
+        {/*
+          The gradient lives on a full-width layer and is revealed by clipping
+          rather than scaling, so its colours stay put while the bar grows.
+        */}
         <div
           key={trackKey}
-          className="h-full w-full origin-left bg-notch-primary/80"
+          className="h-full w-full"
           style={{
-            transform: `scaleX(${progress})`,
-            transition: media?.is_playing ? `transform ${pollIntervalMs}ms linear` : "none",
+            background: "var(--notch-gradient)",
+            clipPath: `inset(0 ${(1 - progress) * 100}% 0 0)`,
+            transition: media?.is_playing ? `clip-path ${pollIntervalMs}ms linear` : "none",
           }}
         />
       </div>
 
       {/* Time, transport controls, trailing widgets */}
       <div className="grid grid-cols-[1fr_auto_1fr] items-center">
-        <span className="font-mono text-[10px] leading-none font-medium tracking-[-0.02em] tabular-nums text-notch-tertiary">
-          {hasTimeline
-            ? `${formatDuration(media.position_ms)} / ${formatDuration(media.duration_ms)}`
-            : ""}
+        <span
+          aria-label={hasTimeline ? `Playback position ${timeline}` : undefined}
+          className="font-display text-[10px] leading-none font-bold text-notch-tertiary"
+        >
+          {hasTimeline && <DigitText text={timeline} />}
         </span>
 
         <div className="flex items-center gap-2">

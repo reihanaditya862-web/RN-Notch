@@ -1,5 +1,6 @@
 mod commands;
 mod tray;
+mod visibility;
 
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -17,6 +18,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetWindowRect};
 
 use commands::audio;
+use commands::fullscreen::{self, ForegroundWatch};
 use commands::media::{self, MediaState};
 use commands::settings::{self, SETTINGS_DIR, SETTINGS_FILE, SettingsState};
 use commands::system::{self, SystemState};
@@ -380,11 +382,15 @@ pub fn run() {
         })
         .manage(MediaState::default())
         .manage(SystemState::default())
+        .manage(ForegroundWatch::default())
+        .manage(visibility::Visibility::default())
         .invoke_handler(tauri::generate_handler![
             set_clickthrough,
             set_hit_regions,
             reposition_center,
             quit_app,
+            fullscreen::get_foreground_state,
+            fullscreen::is_fullscreen_app_active,
             settings::load_settings,
             settings::save_settings,
             media::get_media_info,
@@ -425,6 +431,12 @@ pub fn run() {
             // stays at the x/y from tauri.conf.json.
             if let Err(error) = center_top(&window) {
                 eprintln!("could not center the notch window: {error}");
+            }
+
+            // Fullscreen auto-hide and the compact shape are extras: the app
+            // still works if their watcher cannot start.
+            if let Err(error) = fullscreen::spawn_watcher(window.clone()) {
+                eprintln!("could not start the foreground watcher: {error}");
             }
 
             spawn_cursor_watcher(window)?;

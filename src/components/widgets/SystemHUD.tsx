@@ -10,7 +10,9 @@ import {
   VolumeX,
 } from "lucide-react";
 import { useVolume } from "../../hooks/useVolume";
+import { BATTERY_LOW_THRESHOLD } from "../../lib/constants";
 import { useNotchStore } from "../../stores/notchStore";
+import { DigitText } from "./DigitText";
 
 interface StatTileProps {
   icon: ReactNode;
@@ -32,9 +34,17 @@ function StatTile({ icon, label, value, detail, level, critical }: StatTileProps
         <span className="text-[10px] leading-3 font-medium">{label}</span>
       </div>
 
-      <p className="truncate font-mono text-[13px] leading-4 font-medium tracking-[-0.02em] tabular-nums text-notch-primary">
-        {value}
-        {detail && <span className="text-[10px] text-notch-tertiary"> {detail}</span>}
+      <p
+        aria-label={detail ? `${value} ${detail}` : value}
+        className="truncate font-display text-[13px] leading-4 font-bold text-notch-primary"
+      >
+        <DigitText text={value} />
+        {detail && (
+          <span aria-hidden="true" className="text-[10px] text-notch-tertiary">
+            {" "}
+            {detail}
+          </span>
+        )}
       </p>
 
       <div className="h-[2px] w-full overflow-hidden rounded-full bg-white/10">
@@ -90,8 +100,11 @@ function VolumeRow() {
         style={{ "--range-fill": `${shown}%` } as CSSProperties}
       />
 
-      <span className="w-9 shrink-0 text-right font-mono text-[12px] leading-none font-medium tracking-[-0.02em] tabular-nums text-notch-secondary">
-        {isAvailable ? `${shown}%` : "--"}
+      <span
+        aria-hidden="true"
+        className="w-11 shrink-0 text-right font-display text-[12px] leading-none font-bold text-notch-secondary"
+      >
+        {isAvailable ? <DigitText text={`${shown}%`} /> : "--"}
       </span>
     </div>
   );
@@ -120,7 +133,7 @@ export function SystemHUD() {
           value={!info ? "--" : battery === null ? "AC" : `${battery}%`}
           detail={batteryDetail}
           level={battery === null ? null : battery / 100}
-          critical={battery !== null && !onAc && battery < 10}
+          critical={battery !== null && !onAc && battery < BATTERY_LOW_THRESHOLD}
         />
         <StatTile
           icon={<Cpu size={12} strokeWidth={1.5} aria-hidden="true" />}

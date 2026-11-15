@@ -3,6 +3,7 @@ import { Blend, Cpu, Moon, Music, Paperclip, PenLine, X } from "lucide-react";
 import { OPACITY_MAX, OPACITY_MIN } from "../lib/constants";
 import type { ActiveWidgets, DisplayMode } from "../lib/types";
 import { useNotchStore } from "../stores/notchStore";
+import { DigitText } from "./widgets/DigitText";
 
 const FOCUS_RING =
   "outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-notch-focus";
@@ -178,8 +179,11 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           className="notch-range min-w-0 flex-1"
           style={{ "--range-fill": `${opacityFill}%` } as CSSProperties}
         />
-        <span className="w-9 shrink-0 text-right font-mono text-[12px] leading-none font-medium tracking-[-0.02em] tabular-nums text-notch-secondary">
-          {opacityPercent}%
+        <span
+          aria-hidden="true"
+          className="w-11 shrink-0 text-right font-display text-[12px] leading-none font-bold text-notch-secondary"
+        >
+          <DigitText text={`${opacityPercent}%`} />
         </span>
       </label>
 

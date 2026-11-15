@@ -1,4 +1,11 @@
-import { ISLAND_TOP_OFFSET, NOTCH_BOTTOM_RADIUS, NOTCH_SIZES } from "./constants";
+import {
+  COMPACT_HEIGHT,
+  ISLAND_TOP_OFFSET,
+  ISLAND_TOP_OFFSET_COMPACT,
+  NOTCH_BOTTOM_RADIUS,
+  NOTCH_EAR_RADIUS,
+  NOTCH_SIZES,
+} from "./constants";
 import type { ActiveWidgets, AppSettings, NotchState } from "./types";
 
 /** Final geometry of the capsule, in px, relative to the window. */
@@ -7,10 +14,15 @@ export interface NotchShape {
   height: number;
   /** Distance from the top edge of the screen. */
   top: number;
-  /** Radius of the two top corners. */
+  /** Radius of the two top corners (convex, rounding inwards). */
   topRadius: number;
   /** Radius of the two bottom corners. */
   bottomRadius: number;
+  /**
+   * Radius of the two ears: concave curves that flare outwards from the top
+   * corners into the screen edge. Zero in island mode.
+   */
+  earRadius: number;
 }
 
 /** Heights of the dashboard's parts, in px. `ExpandedView` lays out to these. */
@@ -46,37 +58,60 @@ export function getDashboardHeight(widgets: ActiveWidgets): number {
   return content + (DASHBOARD.padding + BORDER) * 2 + 1;
 }
 
+/** True for the two collapsed states, the ones that sit on screen all day. */
+export function isCollapsedState(state: NotchState): boolean {
+  return state === "idle" || state === "idleMedia";
+}
+
 /**
- * The capsule's geometry for a state and the user's settings.
+ * The capsule's geometry for a state, the user's settings, and whether a
+ * maximized app is in front.
  *
  * - Island: floats `ISLAND_TOP_OFFSET` below the top edge. The collapsed
  *   capsule is a full pill (radius = half its height, what `rounded-full`
  *   resolves to); larger states keep their own radius, because a full pill
  *   would cut into their content.
- * - Notch: touches the top edge, square on top so it merges with the bezel,
- *   with only the bottom corners rounded.
+ * - Notch: touches the top edge. Instead of square top corners it has ears
+ *   that flare out into the edge, so it seems to grow out of the bezel; only
+ *   the bottom corners are rounded inwards.
+ * - Compact (`isCompact`): the collapsed capsule gets lower and, in island
+ *   mode, moves closer to the edge, to stay clear of a maximized browser's
+ *   tab strip. The states the user opens on purpose are not affected.
  */
-export function getNotchShape(state: NotchState, settings: AppSettings): NotchShape {
+export function getNotchShape(
+  state: NotchState,
+  settings: AppSettings,
+  isCompact = false,
+): NotchShape {
   const base = NOTCH_SIZES[state];
-  const height = state === "expanded" ? getDashboardHeight(settings.active_widgets) : base.height;
+  const isCollapsed = isCollapsedState(state);
+  const useCompact = isCompact && isCollapsed;
+
+  let height = base.height;
+  if (state === "expanded") height = getDashboardHeight(settings.active_widgets);
+  else if (useCompact) height = COMPACT_HEIGHT;
 
   if (settings.display_mode === "notch") {
+    // A low capsule cannot carry the full radii: the ear and the bottom
+    // corner share one side and may not add up to more than its height.
+    const bottomRadius = Math.min(NOTCH_BOTTOM_RADIUS, height / 2 + 2);
     return {
       width: base.width,
       height,
       top: 0,
       topRadius: 0,
-      bottomRadius: NOTCH_BOTTOM_RADIUS,
+      bottomRadius,
+      earRadius: Math.min(NOTCH_EAR_RADIUS, height - bottomRadius),
     };
   }
 
-  const isCollapsed = state === "idle" || state === "idleMedia";
   const radius = isCollapsed ? height / 2 : base.radius;
   return {
     width: base.width,
     height,
-    top: ISLAND_TOP_OFFSET,
+    top: useCompact ? ISLAND_TOP_OFFSET_COMPACT : ISLAND_TOP_OFFSET,
     topRadius: radius,
     bottomRadius: radius,
+    earRadius: 0,
   };
 }

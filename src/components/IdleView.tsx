@@ -1,13 +1,17 @@
-import { Moon, Music } from "lucide-react";
+import { Moon } from "lucide-react";
 import type { MediaInfo } from "../lib/types";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { BatteryIndicator } from "./widgets/BatteryIndicator";
 import { ClockDisplay } from "./widgets/ClockDisplay";
+import { MediaWaveform } from "./widgets/MediaWaveform";
 
 interface IdleViewProps {
   /** Pass the playing media to get the wider "idle + media" layout. */
   media: MediaInfo | null;
   /** Do Not Disturb is on: show the purple dot and the moon. */
   isDndEnabled: boolean;
+  /** The capsule is in its low, compact shape: use the smaller type. */
+  isCompact: boolean;
 }
 
 /** Purple dot + moon: the capsule will not open or widen by itself. */
@@ -28,17 +32,28 @@ function DndIndicator() {
 /**
  * Content of the collapsed capsule.
  *
- * - No media: clock on the left, battery on the right (180px).
- * - Media playing: music icon and song title, then clock and battery (280px).
+ * - No media: clock on the left, battery on the right.
+ * - Media playing: waveform and song title, then clock and battery.
  */
-export function IdleView({ media, isDndEnabled }: IdleViewProps) {
+export function IdleView({ media, isDndEnabled, isCompact }: IdleViewProps) {
+  const clock = (
+    <ErrorBoundary label="Clock" fallback={null}>
+      <ClockDisplay showSeconds={!media} isCompact={isCompact} />
+    </ErrorBoundary>
+  );
+  const battery = (
+    <ErrorBoundary label="Battery" fallback={null}>
+      <BatteryIndicator isCompact={isCompact} />
+    </ErrorBoundary>
+  );
+
   if (!media) {
     return (
       <div className="flex h-full w-full items-center justify-between px-3">
-        <ClockDisplay />
+        {clock}
         <span className="flex items-center gap-2">
           {isDndEnabled && <DndIndicator />}
-          <BatteryIndicator />
+          {battery}
         </span>
       </div>
     );
@@ -48,21 +63,19 @@ export function IdleView({ media, isDndEnabled }: IdleViewProps) {
 
   return (
     <div className="flex h-full w-full items-center gap-2 px-3">
-      <Music
-        size={14}
-        strokeWidth={1.5}
-        aria-hidden="true"
-        className="shrink-0 text-notch-playing"
-      />
+      <MediaWaveform isPlaying={media.is_playing} size={isCompact ? 12 : 14} />
       {/* No `title` tooltip here: hovering expands the capsule, and the tooltip would linger over it. */}
       <span
         aria-label={`Now playing: ${label}`}
-        className="min-w-0 flex-1 truncate text-[12px] leading-4 font-medium text-notch-primary"
+        className={[
+          "min-w-0 flex-1 truncate font-display leading-4 font-bold text-notch-primary",
+          isCompact ? "text-[11px]" : "text-[12px]",
+        ].join(" ")}
       >
         {media.title}
       </span>
-      <ClockDisplay showSeconds={false} />
-      <BatteryIndicator />
+      {clock}
+      {battery}
     </div>
   );
 }

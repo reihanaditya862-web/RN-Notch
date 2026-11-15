@@ -65,5 +65,13 @@ export interface AppSettings {
   dnd_enabled: boolean;
 }
 
+/** Mirrors the Rust `ForegroundState` struct in `src-tauri/src/commands/fullscreen.rs`. */
+export interface ForegroundState {
+  /** A fullscreen app (game, fullscreen video, slide show) is in front. */
+  is_fullscreen: boolean;
+  /** A maximized window (typically a browser) is in front. */
+  is_maximized: boolean;
+}
+
 /** Visual states of the capsule implemented so far. */
 export type NotchState = "idle" | "idleMedia" | "hover" | "expanded" | "settings" | "dragOver";

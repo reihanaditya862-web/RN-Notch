@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { ChevronUp } from "lucide-react";
 import { DASHBOARD } from "../lib/layout";
 import type { ActiveWidgets, MediaInfo } from "../lib/types";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { ClockDisplay } from "./widgets/ClockDisplay";
 import { FileShelf } from "./widgets/FileShelf";
 import { MediaPill } from "./widgets/MediaPill";
@@ -66,18 +67,25 @@ export function ExpandedView({
       className="flex h-full w-full flex-col *:shrink-0"
       style={{ padding: DASHBOARD.padding, gap: DASHBOARD.gap }}
     >
+      {/*
+        Every widget has its own error boundary and a wrapper of fixed height:
+        if one fails, it shows "(unavailable)" in place and the others carry on
+        exactly where they were.
+      */}
       {widgets.media ? (
         <>
           <div style={{ height: DASHBOARD.media }}>
-            <MediaPill
-              media={media}
-              pollIntervalMs={mediaPollIntervalMs}
-              onPlayPause={onPlayPause}
-              onNext={onNext}
-              onPrevious={onPrevious}
-              className="p-0"
-              trailing={corner}
-            />
+            <ErrorBoundary label="Media player">
+              <MediaPill
+                media={media}
+                pollIntervalMs={mediaPollIntervalMs}
+                onPlayPause={onPlayPause}
+                onNext={onNext}
+                onPrevious={onPrevious}
+                className="p-0"
+                trailing={corner}
+              />
+            </ErrorBoundary>
           </div>
           <hr className="-mx-3 border-notch-border" />
         </>
@@ -87,9 +95,27 @@ export function ExpandedView({
         </div>
       )}
 
-      {widgets.system && <SystemHUD />}
-      {widgets.file_shelf && <FileShelf />}
-      {widgets.scratchpad && <QuickScratchpad />}
+      {widgets.system && (
+        <div style={{ height: DASHBOARD.system }}>
+          <ErrorBoundary label="System monitor">
+            <SystemHUD />
+          </ErrorBoundary>
+        </div>
+      )}
+      {widgets.file_shelf && (
+        <div style={{ height: DASHBOARD.fileShelf }}>
+          <ErrorBoundary label="File shelf">
+            <FileShelf />
+          </ErrorBoundary>
+        </div>
+      )}
+      {widgets.scratchpad && (
+        <div style={{ height: DASHBOARD.scratchpad }}>
+          <ErrorBoundary label="Quick note">
+            <QuickScratchpad />
+          </ErrorBoundary>
+        </div>
+      )}
 
       {!widgets.media && !hasBody && (
         <p

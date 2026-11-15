@@ -10,6 +10,7 @@ import {
 import type {
   ActiveWidgets,
   AppSettings,
+  ForegroundState,
   NotchState,
   ShelfFile,
   SystemInfo,
@@ -36,6 +37,9 @@ interface NotchStore extends StateInputs {
   /** False while the capsule is hidden from the tray; polling pauses then. */
   isVisible: boolean;
 
+  /** What is in front of the capsule: a fullscreen app, a maximized window. */
+  foreground: ForegroundState;
+
   /** Latest hardware snapshot from Rust; null until the first poll lands. */
   systemInfo: SystemInfo | null;
   volumeHoldUntil: number;
@@ -52,6 +56,7 @@ interface NotchStore extends StateInputs {
   openSettings: () => void;
   closeSettings: () => void;
   setVisible: (visible: boolean) => void;
+  setForeground: (foreground: ForegroundState) => void;
 
   /**
    * Replaces the settings. Used for values coming from Rust (startup, tray);
@@ -152,6 +157,7 @@ export const useNotchStore = create<NotchStore>()(
         settings: DEFAULT_SETTINGS,
 
         isVisible: true,
+        foreground: { is_fullscreen: false, is_maximized: false },
 
         systemInfo: null,
         volumeHoldUntil: 0,
@@ -179,6 +185,15 @@ export const useNotchStore = create<NotchStore>()(
           if (get().isSettingsOpen) applyInputs({ isSettingsOpen: false });
         },
         setVisible: (visible) => set({ isVisible: visible }),
+        setForeground: (foreground) => {
+          const current = get().foreground;
+          if (
+            current.is_fullscreen !== foreground.is_fullscreen ||
+            current.is_maximized !== foreground.is_maximized
+          ) {
+            set({ foreground });
+          }
+        },
 
         applySettings: (settings) =>
           applyInputs({ settings: { ...settings, opacity: clampOpacity(settings.opacity) } }),
