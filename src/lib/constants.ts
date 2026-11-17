@@ -49,6 +49,9 @@ export const RETIRED_SCALES: Readonly<Record<string, ScaleOption>> = {
 export const GLOW_START_DEFAULT = "#4285F4";
 export const GLOW_END_DEFAULT = "#9B51E0";
 
+/** Neon outline colour while nothing with a cover is playing (see useAlbumAccent). */
+export const NEON_IDLE_COLOR = "#FFFFFF";
+
 /**
  * "Auto" scales with the screen: 1.0 on a 1920px-wide desktop, never smaller
  * than `min` or larger than `max`.

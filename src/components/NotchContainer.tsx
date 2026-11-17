@@ -20,6 +20,7 @@ import {
 } from "framer-motion";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { useAlbumAccent } from "../hooks/useAlbumAccent";
 import { useBatterySaver } from "../hooks/useBatterySaver";
 import { useFileDrop } from "../hooks/useFileDrop";
 import { useForegroundState } from "../hooks/useForegroundState";
@@ -36,6 +37,7 @@ import {
   HOVER_LEAVE_DELAY_MS,
   MEDIA_POLL_HOVER_MS,
   MEDIA_POLL_IDLE_MS,
+  NEON_IDLE_COLOR,
   NOTCH_SIZES,
   SHADOW_NONE,
   SHADOW_RAISED,
@@ -228,7 +230,6 @@ function reportHitRegions(
  */
 export function NotchContainer() {
   const reducedMotion = useReducedMotion();
-  const gradientId = useId();
   const glowStartId = useId();
   const glowEndId = useId();
 
@@ -291,6 +292,8 @@ export function NotchContainer() {
   const { media, playPause, next, previous } = useMediaSession(
     !isHidden && widgets.media ? mediaPollIntervalMs : null,
   );
+  // The neon outline follows the playing track's cover; white otherwise.
+  const neonColor = useAlbumAccent(media) ?? NEON_IDLE_COLOR;
   useSystemInfo(
     isHidden
       ? null
@@ -728,20 +731,13 @@ export function NotchContainer() {
           aria-hidden="true"
           className="pointer-events-none absolute top-0 left-0 overflow-visible"
         >
-          <defs>
-            <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0" stopColor="var(--notch-gradient-from)" />
-              <stop offset="1" stopColor="var(--notch-gradient-to)" />
-            </linearGradient>
-          </defs>
-
           <motion.path
             d={fillPath}
             fill={`rgb(9 9 11 / ${settings.opacity})`}
             style={{ transition: "fill 200ms ease" }}
           />
           {/*
-            Soft glow behind the gradient line; removed under battery saver.
+            Soft glow behind the neon line; removed under battery saver.
             After a pop-in it pulses once: the key remounts the path, which
             restarts the one-shot `notch-landing` animation.
           */}
@@ -749,7 +745,7 @@ export function NotchContainer() {
             key={landingCount}
             d={strokePath}
             fill="none"
-            stroke={`url(#${gradientId})`}
+            stroke={neonColor}
             strokeWidth="3"
             opacity={isActive ? 0.5 : 0}
             className={[
@@ -767,7 +763,7 @@ export function NotchContainer() {
           <motion.path
             d={strokePath}
             fill="none"
-            stroke={`url(#${gradientId})`}
+            stroke={neonColor}
             strokeWidth={BORDER_WIDTH}
             opacity={isActive ? 0.9 : 0}
             className="notch-outline"

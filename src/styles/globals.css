@@ -193,12 +193,13 @@ body {
 
 /*
  * Outline of the capsule (an SVG path, see NotchContainer). The hairline is
- * always there; the blue-to-purple line and its soft glow fade in while the
- * capsule is active (cursor on it, media playing, opened).
+ * always there; the neon line and its soft glow fade in while the capsule is
+ * active (cursor on it, media playing, opened). The neon takes the colour of
+ * the playing cover, white otherwise, and eases over when the track changes.
  */
 .notch-outline {
   transition:
-    stroke 200ms ease,
+    stroke 350ms ease,
     opacity 250ms ease;
 }
 
