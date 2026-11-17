@@ -13,7 +13,8 @@ const BAR_WIDTH = 2;
 const BAR_GAP = 2;
 
 /**
- * Small music visualizer in the blue-to-purple accent.
+ * Small music visualizer in the colour of the track's cover (--notch-accent,
+ * set by NotchContainer), or the blue-to-purple accent when there is none.
  *
  * It is a looping decoration, not a reading of the actual audio. The loop is
  * pure CSS (transform only) and stops under battery saver and reduced motion.
@@ -32,8 +33,20 @@ export function MediaWaveform({ isPlaying, size = 14 }: MediaWaveformProps) {
     >
       <defs>
         <linearGradient id={gradientId} gradientUnits="userSpaceOnUse" x1="0" y1={size} x2="0" y2="0">
-          <stop offset="0" stopColor="var(--notch-gradient-deep-from)" />
-          <stop offset="1" stopColor="var(--notch-gradient-to)" />
+          <stop
+            offset="0"
+            style={{
+              stopColor: "var(--notch-accent, var(--notch-gradient-deep-from))",
+              transition: "stop-color 350ms ease",
+            }}
+          />
+          <stop
+            offset="1"
+            style={{
+              stopColor: "var(--notch-accent-light, var(--notch-gradient-to))",
+              transition: "stop-color 350ms ease",
+            }}
+          />
         </linearGradient>
       </defs>
       {BARS.map((height, index) => (

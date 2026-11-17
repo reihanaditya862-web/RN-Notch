@@ -3,11 +3,11 @@ import { cachedAccent, extractAccent } from "../lib/albumAccent";
 import type { MediaInfo } from "../lib/types";
 
 /**
- * Colour of the playing track's cover, or null when nothing is playing, the
- * track has no cover, or the cover is grey. Each cover is sampled once.
+ * Colour of the current track's cover (playing or paused), or null when there
+ * is no track, no cover, or the cover is grey. Each cover is sampled once.
  */
 export function useAlbumAccent(media: MediaInfo | null): string | null {
-  const art = media?.is_playing ? media.album_art_url : null;
+  const art = media?.album_art_url ?? null;
   const key = art ? (media?.album_art_id ?? art) : null;
   const [, setSampled] = useState(0);
 

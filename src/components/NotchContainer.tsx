@@ -292,8 +292,10 @@ export function NotchContainer() {
   const { media, playPause, next, previous } = useMediaSession(
     !isHidden && widgets.media ? mediaPollIntervalMs : null,
   );
-  // The neon outline follows the playing track's cover; white otherwise.
-  const neonColor = useAlbumAccent(media) ?? NEON_IDLE_COLOR;
+  // The neon outline follows the cover while the track plays; white otherwise.
+  // The waveform keeps the cover's colour while paused too (--notch-accent).
+  const coverAccent = useAlbumAccent(media);
+  const neonColor = (media?.is_playing ? coverAccent : null) ?? NEON_IDLE_COLOR;
   useSystemInfo(
     isHidden
       ? null
@@ -714,6 +716,10 @@ export function NotchContainer() {
           y: entranceY,
           scale: entranceScale,
           transformOrigin: "50% 0%",
+          ...(coverAccent && {
+            "--notch-accent": coverAccent,
+            "--notch-accent-light": `color-mix(in srgb, ${coverAccent} 55%, white)`,
+          }),
         }}
         className={[
           "absolute left-1/2 -translate-x-1/2",
