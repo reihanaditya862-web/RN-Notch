@@ -5,7 +5,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
   type FocusEvent,
   type MouseEvent,
 } from "react";
@@ -230,6 +229,8 @@ function reportHitRegions(
 export function NotchContainer() {
   const reducedMotion = useReducedMotion();
   const gradientId = useId();
+  const glowStartId = useId();
+  const glowEndId = useId();
 
   const [cursorOver, setCursorOver] = useState(false);
   const [isPressing, setIsPressing] = useState(false);
@@ -773,6 +774,42 @@ export function NotchContainer() {
           />
         </svg>
 
+        {/*
+          Faint light inside the capsule in the user's two colours (Settings):
+          the start colour from the top left, the end colour from the bottom
+          right, at 16% so the black stays black. It fills the capsule's own
+          outline, so in notch mode one gradient runs from ear tip to ear tip
+          instead of stopping at the body. It breathes while music plays.
+        */}
+        <svg
+          width="1"
+          height="1"
+          aria-hidden="true"
+          className={[
+            "pointer-events-none absolute top-0 left-0 overflow-visible",
+            isMediaPlaying && !settings.dnd_enabled ? "notch-ambient-breathing" : "",
+          ].join(" ")}
+        >
+          <defs>
+            <radialGradient id={glowStartId} cx="0" cy="0" r="1" gradientTransform="scale(1.2 1.7)">
+              <stop offset="0" stopColor={settings.glow_start} stopOpacity="0.16" />
+              <stop offset="0.62" stopColor={settings.glow_start} stopOpacity="0" />
+            </radialGradient>
+            <radialGradient
+              id={glowEndId}
+              cx="0"
+              cy="0"
+              r="1"
+              gradientTransform="translate(1 1) scale(1.2 1.7)"
+            >
+              <stop offset="0" stopColor={settings.glow_end} stopOpacity="0.16" />
+              <stop offset="0.62" stopColor={settings.glow_end} stopOpacity="0" />
+            </radialGradient>
+          </defs>
+          <motion.path d={fillPath} fill={`url(#${glowEndId})`} />
+          <motion.path d={fillPath} fill={`url(#${glowStartId})`} />
+        </svg>
+
         {/* Clips the content to the capsule and carries the drop shadow. */}
         <motion.div
           style={{
@@ -784,25 +821,6 @@ export function NotchContainer() {
           }}
           className="absolute inset-0 overflow-hidden transition-shadow duration-200"
         >
-          {/*
-            Faint light inside the capsule in the user's two colours (Settings);
-            it breathes while music plays. Same layer in every state and both
-            display modes, the hover pop-up included.
-          */}
-          <div
-            aria-hidden="true"
-            style={
-              {
-                "--notch-glow-start": settings.glow_start,
-                "--notch-glow-end": settings.glow_end,
-              } as CSSProperties
-            }
-            className={[
-              "notch-ambient",
-              isMediaPlaying && !settings.dnd_enabled ? "notch-ambient-breathing" : "",
-            ].join(" ")}
-          />
-
           {/*
             Each view has the fixed size of its own state and is centered in
             the capsule, so its layout never reflows while the capsule is
