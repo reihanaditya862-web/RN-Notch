@@ -24,8 +24,6 @@ interface BatteryIconProps {
   tone: Tone;
   /** Draws the charging bolt over the body. */
   hasBolt: boolean;
-  /** Size factor; the ultra-slim capsule uses a smaller icon. */
-  scale?: number;
   className?: string;
 }
 
@@ -33,7 +31,7 @@ interface BatteryIconProps {
  * Slim horizontal battery: a rounded body with a small terminal cap on the
  * right, a fill bar that follows the level, and a sharp bolt while plugged in.
  */
-function BatteryIcon({ percent, tone, hasBolt, scale = 1, className }: BatteryIconProps) {
+function BatteryIcon({ percent, tone, hasBolt, className }: BatteryIconProps) {
   const gradientId = useId();
   const level = Math.min(100, Math.max(0, percent)) / 100;
   // Keep a sliver visible above 0%, so the bar never disappears entirely.
@@ -48,8 +46,8 @@ function BatteryIcon({ percent, tone, hasBolt, scale = 1, className }: BatteryIc
 
   return (
     <svg
-      width={ICON_WIDTH * scale}
-      height={ICON_HEIGHT * scale}
+      width={ICON_WIDTH}
+      height={ICON_HEIGHT}
       viewBox={`0 0 ${ICON_WIDTH} ${ICON_HEIGHT}`}
       fill="none"
       aria-hidden="true"
@@ -111,11 +109,6 @@ function BatteryIcon({ percent, tone, hasBolt, scale = 1, className }: BatteryIc
   );
 }
 
-interface BatteryIndicatorProps {
-  /** Smaller text for the compact capsule. */
-  isCompact?: boolean;
-}
-
 /**
  * Compact battery status: icon + percentage.
  *
@@ -125,18 +118,13 @@ interface BatteryIndicatorProps {
  * Fill colour: green while plugged in, the blue-to-purple accent on battery,
  * red below 15%.
  */
-export function BatteryIndicator({ isCompact = false }: BatteryIndicatorProps) {
+export function BatteryIndicator() {
   const isLoaded = useNotchStore((store) => store.systemInfo !== null);
   const percent = useNotchStore((store) => store.systemInfo?.battery_percent ?? null);
   const isCharging = useNotchStore((store) => store.systemInfo?.is_charging ?? false);
   const onAc = useNotchStore((store) => store.systemInfo?.is_ac_connected ?? false);
 
-  // The ultra-slim capsule is 18px high: smaller type and a smaller icon.
-  const iconScale = isCompact ? 0.8 : 1;
-  const textClass = [
-    "font-display leading-none font-bold tracking-[-0.01em]",
-    isCompact ? "text-[10px]" : "text-[12px]",
-  ].join(" ");
+  const textClass = "font-display text-[12px] leading-none font-bold tracking-[-0.01em]";
 
   if (!isLoaded) {
     return (
@@ -144,7 +132,7 @@ export function BatteryIndicator({ isCompact = false }: BatteryIndicatorProps) {
         aria-label="Battery status unavailable"
         className="flex shrink-0 items-center gap-1 text-notch-tertiary"
       >
-        <BatteryIcon percent={0} tone="normal" hasBolt={false} scale={iconScale} />
+        <BatteryIcon percent={0} tone="normal" hasBolt={false} />
         <span className={textClass}>--</span>
       </span>
     );
@@ -157,7 +145,7 @@ export function BatteryIndicator({ isCompact = false }: BatteryIndicatorProps) {
         aria-label="Running on mains power"
         className="flex shrink-0 items-center gap-1 text-notch-secondary"
       >
-        <Plug size={isCompact ? 11 : 14} strokeWidth={1.5} aria-hidden="true" />
+        <Plug size={14} strokeWidth={1.5} aria-hidden="true" />
         <span className={textClass}>AC</span>
       </span>
     );
@@ -183,7 +171,6 @@ export function BatteryIndicator({ isCompact = false }: BatteryIndicatorProps) {
         percent={percent}
         tone={tone}
         hasBolt={onAc}
-        scale={iconScale}
         className={isCharging ? "notch-pulse" : isLow ? "notch-blink" : undefined}
       />
       <span className={textClass}>

@@ -1,7 +1,26 @@
-import type { CSSProperties, ReactNode } from "react";
-import { Blend, Cpu, Moon, Music, Paperclip, PenLine, Power, Scaling, X } from "lucide-react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  Blend,
+  Cpu,
+  Moon,
+  Music,
+  Palette,
+  Paperclip,
+  PenLine,
+  Power,
+  RotateCcw,
+  Scaling,
+  X,
+} from "lucide-react";
 import { useAutostart } from "../hooks/useAutostart";
-import { OPACITY_MAX, OPACITY_MIN, SCALE_OPTIONS } from "../lib/constants";
+import { hexFromHue, hueFromHex, parseTypedHex } from "../lib/color";
+import {
+  GLOW_END_DEFAULT,
+  GLOW_START_DEFAULT,
+  OPACITY_MAX,
+  OPACITY_MIN,
+  SCALE_OPTIONS,
+} from "../lib/constants";
 import type { ActiveWidgets, DisplayMode } from "../lib/types";
 import { useNotchStore } from "../stores/notchStore";
 import { DigitText } from "./widgets/DigitText";
@@ -104,9 +123,156 @@ interface SettingsModalProps {
   onClose: () => void;
 }
 
+/** Which of the two glow colours a control refers to. */
+type GlowEnd = "start" | "end";
+
 /**
- * Settings panel, shown inside the capsule (420x308): display mode, size,
- * opacity, which widgets are on, Do Not Disturb and Start with Windows.
+ * The two colours of the glow inside the capsule.
+ *
+ * Top row: one chip per colour (pick which one to edit) and a reset button.
+ * Bottom row: a hue slider and a "#RRGGBB" field for the colour being edited.
+ * Everything is inline - no system colour dialog, which would open a separate
+ * window and count as a click outside the panel. Each change goes straight to
+ * the store, so the capsule itself is the live preview.
+ */
+function GlowColors() {
+  const start = useNotchStore((store) => store.settings.glow_start);
+  const end = useNotchStore((store) => store.settings.glow_end);
+  const setGlowColor = useNotchStore((store) => store.setGlowColor);
+  const resetGlowColors = useNotchStore((store) => store.resetGlowColors);
+
+  const [editing, setEditing] = useState<GlowEnd>("start");
+  const color = editing === "start" ? start : end;
+  const isDefault = start === GLOW_START_DEFAULT && end === GLOW_END_DEFAULT;
+
+  // What is in the text field. It may be half-typed, so it is kept apart
+  // from the colour and follows it whenever the colour changes elsewhere.
+  const [draft, setDraft] = useState(color);
+  useEffect(() => setDraft(color), [color]);
+
+  const handleDraft = (text: string) => {
+    setDraft(text);
+    const typed = parseTypedHex(text);
+    if (typed) setGlowColor(editing, typed);
+  };
+
+  const chips: Array<{ which: GlowEnd; label: string; value: string }> = [
+    { which: "start", label: "Start", value: start },
+    { which: "end", label: "End", value: end },
+  ];
+
+  return (
+    <div role="group" aria-label="Glow colours" className="flex flex-col gap-2">
+      <div className="flex h-7 items-center gap-2">
+        <Palette
+          size={14}
+          strokeWidth={1.5}
+          aria-hidden="true"
+          className="mx-1 shrink-0 text-notch-tertiary"
+        />
+        <span className="w-14 shrink-0 text-[12px] leading-4 text-notch-primary">Glow</span>
+
+        <div
+          role="radiogroup"
+          aria-label="Colour to edit"
+          className="grid h-full min-w-0 flex-1 grid-cols-2 gap-1 rounded-lg bg-notch-surface p-1"
+        >
+          {chips.map((chip) => {
+            const isSelected = chip.which === editing;
+            return (
+              <button
+                key={chip.which}
+                type="button"
+                role="radio"
+                aria-checked={isSelected}
+                aria-label={`${chip.label} colour, ${chip.value}`}
+                onClick={() => setEditing(chip.which)}
+                className={[
+                  "flex min-w-0 items-center justify-center gap-1.5 rounded-md text-[11px] leading-none font-medium",
+                  "transition-colors duration-100",
+                  FOCUS_RING,
+                  isSelected
+                    ? "bg-notch-surface-hover text-notch-primary"
+                    : "text-notch-secondary hover:text-notch-primary",
+                ].join(" ")}
+              >
+                <span
+                  aria-hidden="true"
+                  className="h-3 w-3 shrink-0 rounded-full border border-white/25"
+                  style={{ backgroundColor: chip.value }}
+                />
+                <span>{chip.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <button
+          type="button"
+          onClick={resetGlowColors}
+          disabled={isDefault}
+          aria-label="Reset glow colours to blue and purple"
+          title="Reset to the default blue and purple"
+          className={[
+            "flex h-7 shrink-0 items-center gap-1 rounded-lg bg-notch-surface px-2 text-[11px] leading-none font-medium",
+            "text-notch-secondary transition-colors duration-100 hover:text-notch-primary",
+            "disabled:pointer-events-none disabled:opacity-40",
+            FOCUS_RING,
+          ].join(" ")}
+        >
+          <RotateCcw size={12} strokeWidth={1.5} aria-hidden="true" />
+          Reset
+        </button>
+      </div>
+
+      <div className="flex h-7 items-center gap-2">
+        <span
+          aria-hidden="true"
+          className="mx-1 h-3.5 w-3.5 shrink-0 rounded-full border border-white/25"
+          style={{ backgroundColor: color }}
+        />
+        <span className="w-14 shrink-0 text-[12px] leading-4 text-notch-secondary">
+          {editing === "start" ? "Start" : "End"}
+        </span>
+        <input
+          type="range"
+          min={0}
+          max={360}
+          step={1}
+          value={hueFromHex(color)}
+          onChange={(event) => setGlowColor(editing, hexFromHue(Number(event.currentTarget.value)))}
+          aria-label={`Hue of the ${editing} colour`}
+          className="notch-range notch-range-hue min-w-0 flex-1"
+        />
+        <input
+          type="text"
+          value={draft}
+          onChange={(event) => handleDraft(event.currentTarget.value)}
+          // Leaving the field with something incomplete in it restores the colour.
+          onBlur={() => setDraft(color)}
+          maxLength={7}
+          spellCheck={false}
+          autoComplete="off"
+          aria-label={`Hex value of the ${editing} colour`}
+          aria-invalid={parseTypedHex(draft) === null}
+          className={[
+            "h-7 w-[76px] shrink-0 rounded-lg border bg-notch-surface px-2 text-center",
+            "font-mono text-[11px] leading-none text-notch-primary uppercase outline-none",
+            "transition-colors duration-100",
+            parseTypedHex(draft) === null
+              ? "border-notch-error"
+              : "border-transparent focus:border-notch-border-active",
+          ].join(" ")}
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Settings panel, shown inside the capsule (420x380): display mode, size,
+ * opacity, glow colours, which widgets are on, Do Not Disturb and Start with
+ * Windows.
  *
  * Every control changes the store at once, so the capsule previews it live;
  * `useSettingsSync` writes the result to `%APPDATA%\rn-notch\settings.json`.
@@ -228,6 +394,8 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           <DigitText text={`${opacityPercent}%`} />
         </span>
       </label>
+
+      <GlowColors />
 
       <div role="group" aria-label="Widgets" className="grid grid-cols-2 gap-1.5">
         {WIDGETS.map(({ key, label, icon }) => (

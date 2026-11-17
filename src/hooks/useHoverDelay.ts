@@ -19,6 +19,11 @@ interface HoverDelay {
    * If the cursor is not over the target, the leave countdown starts right away.
    */
   open: () => void;
+  /**
+   * Ends the hover immediately and cancels any pending timer. For when the
+   * target goes away altogether (a fullscreen app takes over).
+   */
+  reset: () => void;
 }
 
 /**
@@ -84,7 +89,13 @@ export function useHoverDelay({
     if (!wantedRef.current) schedule(false, leaveDelay);
   }, [clearTimer, settle, schedule, leaveDelay]);
 
+  const reset = useCallback(() => {
+    clearTimer();
+    wantedRef.current = false;
+    if (activeRef.current) settle(false);
+  }, [clearTimer, settle]);
+
   useEffect(() => clearTimer, [clearTimer]);
 
-  return { isActive, enter, leave, open };
+  return { isActive, enter, leave, open, reset };
 }

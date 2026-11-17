@@ -228,17 +228,27 @@ body {
 }
 
 /*
- * Ambient light inside the capsule: Google blue from the top left, purple
- * from the bottom right, over the matte black fill. Kept faint (16%) so the
- * black stays black and the type stays sharp.
+ * Ambient light inside the capsule: the start colour from the top left, the
+ * end colour from the bottom right, over the matte black fill. The colours
+ * are the user's (Settings -> Glow), passed in as --notch-glow-start / -end;
+ * without them it is Google blue to purple. Whatever the colours, the light
+ * stays at 16% so the black stays black and the type stays sharp.
  */
 .notch-ambient {
   position: absolute;
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(120% 170% at 0% 0%, rgb(66 133 244 / 0.16), transparent 62%),
-    radial-gradient(120% 170% at 100% 100%, rgb(155 81 224 / 0.16), transparent 62%);
+    radial-gradient(
+      120% 170% at 0% 0%,
+      color-mix(in srgb, var(--notch-glow-start, #4285f4) 16%, transparent),
+      transparent 62%
+    ),
+    radial-gradient(
+      120% 170% at 100% 100%,
+      color-mix(in srgb, var(--notch-glow-end, #9b51e0) 16%, transparent),
+      transparent 62%
+    );
 }
 
 /* While music plays the light breathes slowly. Opacity only: compositor work. */
@@ -362,4 +372,27 @@ textarea {
 
 .notch-range-muted::-webkit-slider-thumb {
   background: var(--notch-text-secondary);
+}
+
+/*
+ * Hue slider of the glow colour picker: the track shows the colours it
+ * produces (same saturation and lightness as `hexFromHue` in lib/color.ts).
+ */
+.notch-range-hue::-webkit-slider-runnable-track {
+  height: 6px;
+  background: linear-gradient(
+    to right,
+    hsl(0 85% 60%),
+    hsl(60 85% 60%),
+    hsl(120 85% 60%),
+    hsl(180 85% 60%),
+    hsl(240 85% 60%),
+    hsl(300 85% 60%),
+    hsl(360 85% 60%)
+  );
+}
+
+.notch-range-hue::-webkit-slider-thumb {
+  margin-top: -2px;
+  border: 1.5px solid var(--notch-bg);
 }

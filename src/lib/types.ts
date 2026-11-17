@@ -49,7 +49,7 @@ export type DisplayMode = "island" | "notch";
  * Size of the capsule: "auto" follows the monitor, the others are fixed
  * percentages of the base size. Matches the Rust `SizeScale` enum.
  */
-export type ScaleOption = "auto" | "100" | "125" | "150" | "175";
+export type ScaleOption = "auto" | "100" | "115" | "130" | "150";
 
 /** Which widgets are shown. Keys match the Rust `ActiveWidgets` struct. */
 export interface ActiveWidgets {
@@ -69,6 +69,9 @@ export interface AppSettings {
   opacity: number;
   /** Size of the capsule. */
   scale: ScaleOption;
+  /** The two colours of the glow inside the capsule, as "#RRGGBB". */
+  glow_start: string;
+  glow_end: string;
   active_widgets: ActiveWidgets;
   dnd_enabled: boolean;
 }

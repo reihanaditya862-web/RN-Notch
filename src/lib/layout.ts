@@ -1,7 +1,6 @@
 import {
-  COMPACT_HEIGHT,
   ISLAND_TOP_OFFSET,
-  ISLAND_TOP_OFFSET_COMPACT,
+  LIP_HEIGHT_PX,
   NOTCH_BOTTOM_RADIUS,
   NOTCH_EAR_RADIUS,
   NOTCH_SIZES,
@@ -63,9 +62,19 @@ export function isCollapsedState(state: NotchState): boolean {
   return state === "idle" || state === "idleMedia";
 }
 
+interface ShapeOptions {
+  /**
+   * An app window is under the capsule and the user is not on it: draw the
+   * collapsed capsule as the retracted lip.
+   */
+  isRetracted?: boolean;
+  /** The size factor in effect (1 = 100%); keeps the lip a fixed real height. */
+  uiScale?: number;
+}
+
 /**
- * The capsule's geometry for a state, the user's settings, and whether a
- * maximized app is in front.
+ * The capsule's geometry for a state and the user's settings. This is the one
+ * place its width, height and position are decided.
  *
  * - Island: floats `ISLAND_TOP_OFFSET` below the top edge. The collapsed
  *   capsule is a full pill (radius = half its height, what `rounded-full`
@@ -74,22 +83,34 @@ export function isCollapsedState(state: NotchState): boolean {
  * - Notch: touches the top edge. Instead of square top corners it has ears
  *   that flare out into the edge, so it seems to grow out of the bezel; only
  *   the bottom corners are rounded inwards.
- * - Compact (`isCompact`): the collapsed capsule gets lower and, in island
- *   mode, moves closer to the edge, to stay clear of a maximized browser's
- *   tab strip. The states the user opens on purpose are not affected.
+ * - Retracted (`isRetracted`, both modes): the collapsed capsule keeps its
+ *   width and horizontal position, its top edge goes to the top of the
+ *   screen and its bottom edge rises until only a lip of `LIP_HEIGHT_PX`
+ *   real pixels is left. The states the user opens are not affected.
  */
 export function getNotchShape(
   state: NotchState,
   settings: AppSettings,
-  isCompact = false,
+  { isRetracted = false, uiScale = 1 }: ShapeOptions = {},
 ): NotchShape {
   const base = NOTCH_SIZES[state];
   const isCollapsed = isCollapsedState(state);
-  const useCompact = isCompact && isCollapsed;
 
-  let height = base.height;
-  if (state === "expanded") height = getDashboardHeight(settings.active_widgets);
-  else if (useCompact) height = COMPACT_HEIGHT;
+  if (isRetracted && isCollapsed) {
+    // Sizes here are in capsule units, which are drawn `uiScale` times
+    // larger; dividing keeps the lip the same on screen at every size.
+    const lip = LIP_HEIGHT_PX / uiScale;
+    return {
+      width: base.width,
+      height: lip,
+      top: 0,
+      topRadius: 0,
+      bottomRadius: lip / 2,
+      earRadius: 0,
+    };
+  }
+
+  const height = state === "expanded" ? getDashboardHeight(settings.active_widgets) : base.height;
 
   if (settings.display_mode === "notch") {
     // A low capsule cannot carry the full radii: the ear and the bottom
@@ -109,7 +130,7 @@ export function getNotchShape(
   return {
     width: base.width,
     height,
-    top: useCompact ? ISLAND_TOP_OFFSET_COMPACT : ISLAND_TOP_OFFSET,
+    top: ISLAND_TOP_OFFSET,
     topRadius: radius,
     bottomRadius: radius,
     earRadius: 0,

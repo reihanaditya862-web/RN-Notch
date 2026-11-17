@@ -7,8 +7,13 @@ export const APP_NAME = "RN Notch";
 /** Island mode: gap between the top edge of the screen and the capsule, in px. */
 export const ISLAND_TOP_OFFSET = 8;
 
-/** Island mode while an app window is under the capsule: the gap shrinks to this. */
-export const ISLAND_TOP_OFFSET_COMPACT = 1;
+/**
+ * Retracted: while an app window (a maximized browser) is under the capsule
+ * and the cursor is elsewhere, the capsule pulls up into the top edge until
+ * only a lip of this height is left. In real screen pixels - it does not grow
+ * with the user's size setting.
+ */
+export const LIP_HEIGHT_PX = 5;
 
 /** Notch mode: radius of the two bottom corners, in px. */
 export const NOTCH_BOTTOM_RADIUS = 16;
@@ -20,19 +25,29 @@ export const NOTCH_BOTTOM_RADIUS = 16;
 export const NOTCH_EAR_RADIUS = 12;
 
 /**
- * Ultra-slim: height of the collapsed capsule while an app window (a
- * maximized browser, typically) is under it, in px.
+ * Sizes the user can pick, in the order they are offered. Settings and the
+ * context menu both render this list.
  */
-export const COMPACT_HEIGHT = 18;
-
-/** Sizes the user can pick, in the order they are offered. */
 export const SCALE_OPTIONS: ReadonlyArray<{ value: ScaleOption; label: string }> = [
   { value: "auto", label: "Auto" },
   { value: "100", label: "100%" },
-  { value: "125", label: "125%" },
+  { value: "115", label: "115%" },
+  { value: "130", label: "130%" },
   { value: "150", label: "150%" },
-  { value: "175", label: "175%" },
 ];
+
+/**
+ * Sizes offered by earlier versions and what they become. Rust applies the
+ * same mapping when it reads settings.json.
+ */
+export const RETIRED_SCALES: Readonly<Record<string, ScaleOption>> = {
+  "125": "130",
+  "175": "150",
+};
+
+/** Default inner glow: Google blue to purple. */
+export const GLOW_START_DEFAULT = "#4285F4";
+export const GLOW_END_DEFAULT = "#9B51E0";
 
 /**
  * "Auto" scales with the screen: 1.0 on a 1920px-wide desktop, never smaller
@@ -54,7 +69,7 @@ export const NOTCH_SIZES: Record<NotchState, { width: number; height: number; ra
   idleMedia: { width: 280, height: 28, radius: 14 },
   hover: { width: 360, height: 100, radius: 16 },
   expanded: { width: 420, height: 280, radius: 24 },
-  settings: { width: 420, height: 308, radius: 24 },
+  settings: { width: 420, height: 380, radius: 24 },
   dragOver: { width: 340, height: 100, radius: 24 },
 };
 
@@ -63,6 +78,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   display_mode: "island",
   opacity: 0.95,
   scale: "auto",
+  glow_start: GLOW_START_DEFAULT,
+  glow_end: GLOW_END_DEFAULT,
   active_widgets: { media: true, system: true, file_shelf: true, scratchpad: true },
   dnd_enabled: false,
 };
@@ -135,11 +152,11 @@ export const HOVER_ENTER_DELAY_MS = 150;
 export const HOVER_LEAVE_DELAY_MS = 600;
 
 /**
- * Enter delay for the ultra-slim bar. Longer, because the bar lies over
- * another app's tabs: only a deliberate rest of the cursor should open it,
- * not a pass on the way to a tab.
+ * Enter delay for the retracted lip. A little longer, because the lip lies
+ * along the top edge of another app's tab strip: a deliberate rest of the
+ * cursor opens the pop-up, a pass on the way to a tab does not.
  */
-export const HOVER_ENTER_DELAY_COMPACT_MS = 300;
+export const HOVER_ENTER_DELAY_LIP_MS = 250;
 
 /** Media polling intervals, in ms. */
 export const MEDIA_POLL_IDLE_MS = 1000;

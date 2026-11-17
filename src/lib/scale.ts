@@ -1,9 +1,20 @@
-import { AUTO_SCALE, SCALE_OPTIONS } from "./constants";
+import { AUTO_SCALE, RETIRED_SCALES, SCALE_OPTIONS } from "./constants";
 import type { ScaleOption } from "./types";
 
 /** True for a value that is one of the offered sizes. */
 export function isScaleOption(value: unknown): value is ScaleOption {
   return SCALE_OPTIONS.some((option) => option.value === value);
+}
+
+/**
+ * Turns whatever was stored into an offered size: current values pass
+ * through, the two retired ones are mapped (125% -> 130%, 175% -> 150%), and
+ * anything else becomes `fallback`. Safe to apply any number of times.
+ */
+export function normalizeScale(value: unknown, fallback: ScaleOption): ScaleOption {
+  if (isScaleOption(value)) return value;
+  if (typeof value === "string" && value in RETIRED_SCALES) return RETIRED_SCALES[value];
+  return fallback;
 }
 
 /**

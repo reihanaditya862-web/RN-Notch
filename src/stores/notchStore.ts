@@ -2,12 +2,15 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import {
   DEFAULT_SETTINGS,
+  GLOW_END_DEFAULT,
+  GLOW_START_DEFAULT,
   OPACITY_MAX,
   OPACITY_MIN,
   SHELF_FILE_TTL_MS,
   SHELF_MAX_FILES,
 } from "../lib/constants";
-import { isScaleOption } from "../lib/scale";
+import { isHexColor, normalizeHex } from "../lib/color";
+import { normalizeScale } from "../lib/scale";
 import type {
   ActiveWidgets,
   AppSettings,
@@ -87,6 +90,10 @@ interface NotchStore extends StateInputs {
   setOpacity: (opacity: number) => void;
   /** Picks the capsule size: "auto" or a fixed percentage. */
   setScale: (scale: ScaleOption) => void;
+  /** Sets one colour of the inner glow ("#RRGGBB"); other values are ignored. */
+  setGlowColor: (which: "start" | "end", color: string) => void;
+  /** Puts both glow colours back to the default blue and purple. */
+  resetGlowColors: () => void;
   setWidgetActive: (widget: keyof ActiveWidgets, active: boolean) => void;
   toggleDnd: () => void;
 
@@ -224,10 +231,15 @@ export const useNotchStore = create<NotchStore>()(
 
         applySettings: (settings) =>
           applyInputs({
+            // Rust already migrates and validates; normalizing again here
+            // keeps the UI safe whatever arrives (and costs nothing when the
+            // values are fine).
             settings: {
               ...settings,
               opacity: clampOpacity(settings.opacity),
-              scale: isScaleOption(settings.scale) ? settings.scale : DEFAULT_SETTINGS.scale,
+              scale: normalizeScale(settings.scale, DEFAULT_SETTINGS.scale),
+              glow_start: normalizeHex(settings.glow_start, GLOW_START_DEFAULT),
+              glow_end: normalizeHex(settings.glow_end, GLOW_END_DEFAULT),
             },
           }),
         toggleDisplayMode: () =>
@@ -243,6 +255,18 @@ export const useNotchStore = create<NotchStore>()(
         },
         setScale: (scale) => {
           if (scale !== get().settings.scale) patchSettings({ scale });
+        },
+        setGlowColor: (which, color) => {
+          if (!isHexColor(color)) return;
+          const key = which === "start" ? "glow_start" : "glow_end";
+          const next = color.toUpperCase();
+          if (next !== get().settings[key]) patchSettings({ [key]: next });
+        },
+        resetGlowColors: () => {
+          const { glow_start, glow_end } = get().settings;
+          if (glow_start !== GLOW_START_DEFAULT || glow_end !== GLOW_END_DEFAULT) {
+            patchSettings({ glow_start: GLOW_START_DEFAULT, glow_end: GLOW_END_DEFAULT });
+          }
         },
         setWidgetActive: (widget, active) => {
           const widgets = get().settings.active_widgets;

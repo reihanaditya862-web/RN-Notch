@@ -136,13 +136,15 @@ fn toggle_visibility(app: &AppHandle) {
     set_visibility(app, !visible);
 }
 
-/// Applies the user's Show/Hide choice. While a fullscreen app is in front
-/// the window stays hidden either way; the choice takes effect afterwards.
+/// Applies the user's Show/Hide choice. (While a fullscreen app is in front
+/// the capsule is invisible either way; that part is the frontend's doing.)
 fn set_visibility(app: &AppHandle, visible: bool) {
     if app.state::<Visibility>().is_user_visible() == visible {
         return;
     }
-    visibility::set_user_visible(app, visible);
+    if let Err(error) = visibility::set_user_visible(app, visible) {
+        eprintln!("could not change the capsule's visibility: {error}");
+    }
 
     if let Some(menu) = app.try_state::<TrayMenu>() {
         let _ = menu.visibility.set_text(visibility_label(visible));

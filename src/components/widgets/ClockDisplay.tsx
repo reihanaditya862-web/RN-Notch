@@ -4,8 +4,6 @@ import { DigitText } from "./DigitText";
 interface ClockDisplayProps {
   /** `true` shows HH:mm:ss, `false` shows HH:mm. */
   showSeconds?: boolean;
-  /** Smaller text for the compact capsule. */
-  isCompact?: boolean;
 }
 
 function pad(value: number): string {
@@ -24,7 +22,7 @@ function formatTime(date: Date, showSeconds: boolean): string {
  * Each tick is scheduled for the next second (or minute) boundary instead of
  * a fixed interval, so the display never drifts or skips a value.
  */
-export function ClockDisplay({ showSeconds = true, isCompact = false }: ClockDisplayProps) {
+export function ClockDisplay({ showSeconds = true }: ClockDisplayProps) {
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -46,10 +44,7 @@ export function ClockDisplay({ showSeconds = true, isCompact = false }: ClockDis
     <time
       dateTime={now.toISOString()}
       aria-label={`Time ${text}`}
-      className={[
-        "flex shrink-0 font-display leading-none font-bold text-notch-primary",
-        isCompact ? "text-[10px]" : "text-[12px]",
-      ].join(" ")}
+      className="flex shrink-0 font-display text-[12px] leading-none font-bold text-notch-primary"
     >
       <DigitText text={text} />
     </time>

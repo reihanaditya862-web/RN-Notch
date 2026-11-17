@@ -4,12 +4,12 @@
 //! tells the frontend two things (event `foreground-state`):
 //!
 //! - `is_fullscreen`: a game, a fullscreen video or a slide show covers the
-//!   whole monitor. The capsule fades out and its window is hidden; when the
-//!   fullscreen app goes away the capsule pops back in.
+//!   whole monitor. The capsule fades out completely, hover trigger
+//!   included; when the fullscreen app goes away it comes back.
 //! - `is_window_maximized`: an app window sits right under the capsule - it
 //!   is maximized, or snapped so that its top edge runs below the capsule.
-//!   The capsule then shrinks to an ultra-slim bar, so it stays out of that
-//!   window's tab strip and title bar buttons.
+//!   The capsule then retracts into the top edge until only a thin lip is
+//!   left, which keeps it out of that window's tab strip and title bar.
 //!
 //! Detection is plain Win32: the foreground window's rectangle and style
 //! compared with the monitor it is on.
@@ -27,20 +27,15 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::WindowsAndMessaging::{
-    GWL_STYLE, GetClassNameW, GetForegroundWindow, GetWindowLongW, GetWindowRect, IsWindowVisible,
-    IsZoomed, WS_CAPTION,
+    GWL_STYLE, GetClassNameW, GetForegroundWindow, GetWindowLongW, GetWindowRect, IsIconic,
+    IsWindowVisible, IsZoomed, WS_CAPTION,
 };
-
-use crate::visibility;
 
 /// Emitted with a `ForegroundState` whenever it changes.
 pub const FOREGROUND_EVENT: &str = "foreground-state";
 
 /// How often the foreground window is looked at.
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
-
-/// Time given to the frontend's fade-out before the window is really hidden.
-const FADE_OUT: Duration = Duration::from_millis(350);
 
 /// Half the width of the strip under the capsule that counts as "its place",
 /// in logical px. Wide enough for the collapsed capsule with music playing.
@@ -143,6 +138,11 @@ fn read_foreground(own: HWND) -> Option<ForegroundState> {
     if foreground.0.is_null() || !unsafe { IsWindowVisible(foreground) }.as_bool() {
         return nothing;
     }
+    // A window that was just minimized can stay "foreground" until the user
+    // clicks something else. It is not in front of anything any more.
+    if unsafe { IsIconic(foreground) }.as_bool() {
+        return nothing;
+    }
     if is_shell_class(&class_name(foreground)) {
         return nothing;
     }
@@ -204,27 +204,10 @@ fn watch(app: AppHandle, raw_hwnd: isize) {
             continue;
         };
         let previous = app.state::<ForegroundWatch>().replace(next);
-        if next == previous {
-            continue;
-        }
-
-        match (previous.is_fullscreen, next.is_fullscreen) {
-            // Entering fullscreen: let the capsule fade out, then hide the
-            // window so it cannot cost the game a single frame.
-            (false, true) => {
-                let _ = app.emit(FOREGROUND_EVENT, next);
-                thread::sleep(FADE_OUT);
-                visibility::set_fullscreen(&app, true);
-            }
-            // Leaving fullscreen (Alt-Tab, minimize, Esc): bring the window
-            // back first, then tell the frontend, which plays the pop-in.
-            (true, false) => {
-                visibility::set_fullscreen(&app, false);
-                let _ = app.emit(FOREGROUND_EVENT, next);
-            }
-            _ => {
-                let _ = app.emit(FOREGROUND_EVENT, next);
-            }
+        if next != previous {
+            // The frontend does the rest: fading out for fullscreen,
+            // retracting over a maximized window, coming back afterwards.
+            let _ = app.emit(FOREGROUND_EVENT, next);
         }
     }
 }

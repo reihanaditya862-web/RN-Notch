@@ -49,7 +49,7 @@ const NEAR_MARGIN_PX: i32 = 160;
 /// Window size at 100% scale, in logical px; keep in step with the `width`
 /// and `height` in `tauri.conf.json`.
 const BASE_WINDOW_WIDTH: f64 = 520.0;
-const BASE_WINDOW_HEIGHT: f64 = 380.0;
+const BASE_WINDOW_HEIGHT: f64 = 440.0;
 
 /// Range of capsule scales the window can be sized for.
 const WINDOW_SCALE_MIN: f64 = 0.75;
