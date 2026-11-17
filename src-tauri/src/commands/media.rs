@@ -16,6 +16,7 @@ use windows::Media::Control::{
     GlobalSystemMediaTransportControlsSessionMediaProperties as MediaProperties,
     GlobalSystemMediaTransportControlsSessionPlaybackStatus as PlaybackStatus,
 };
+use windows::Media::MediaPlaybackAutoRepeatMode as RepeatMode;
 use windows::Storage::Streams::DataReader;
 
 /// Windows time values are counted in 100-nanosecond ticks.
@@ -44,6 +45,72 @@ pub struct MediaInfo {
     pub duration_ms: u64,
     /// Friendly name of the app that owns the session, e.g. "Spotify".
     pub source: String,
+    /// Whether the app accepts a new playback position.
+    pub can_seek: bool,
+    /// Shuffle on or off; `None` when the app does not offer shuffle.
+    pub shuffle: Option<bool>,
+    /// "none", "track" or "list"; `None` when the app does not offer repeat.
+    pub repeat: Option<&'static str>,
+}
+
+/// Seeking, shuffle and repeat as the app reports them, see [`MediaInfo`].
+struct PlaybackModes {
+    can_seek: bool,
+    shuffle: Option<bool>,
+    repeat: Option<&'static str>,
+}
+
+fn repeat_name(mode: RepeatMode) -> &'static str {
+    match mode {
+        RepeatMode::Track => "track",
+        RepeatMode::List => "list",
+        _ => "none",
+    }
+}
+
+fn parse_repeat(name: &str) -> Option<RepeatMode> {
+    match name {
+        "none" => Some(RepeatMode::None),
+        "track" => Some(RepeatMode::Track),
+        "list" => Some(RepeatMode::List),
+        _ => None,
+    }
+}
+
+/// Apps say which controls they accept; shuffle and repeat are only reported
+/// for apps that accept changing them, so the buttons can stay disabled.
+fn playback_modes(session: &Session) -> PlaybackModes {
+    let Ok(info) = session.GetPlaybackInfo() else {
+        return PlaybackModes {
+            can_seek: false,
+            shuffle: None,
+            repeat: None,
+        };
+    };
+    let (can_seek, can_shuffle, can_repeat) = match info.Controls() {
+        Ok(controls) => (
+            controls.IsPlaybackPositionEnabled().unwrap_or(false),
+            controls.IsShuffleEnabled().unwrap_or(false),
+            controls.IsRepeatEnabled().unwrap_or(false),
+        ),
+        Err(_) => (false, false, false),
+    };
+
+    PlaybackModes {
+        can_seek,
+        shuffle: can_shuffle.then(|| {
+            info.IsShuffleActive()
+                .and_then(|active| active.Value())
+                .unwrap_or(false)
+        }),
+        repeat: can_repeat.then(|| {
+            repeat_name(
+                info.AutoRepeatMode()
+                    .and_then(|mode| mode.Value())
+                    .unwrap_or(RepeatMode::None),
+            )
+        }),
+    }
 }
 
 /// State shared by the media commands.
@@ -296,6 +363,7 @@ fn read_media_info(
     let app_id = source_id(&session);
     let playing = is_playing(&session);
     let (position_ms, duration_ms) = timeline(&session, playing);
+    let modes = playback_modes(&session);
 
     let track_key = format!("{app_id}\u{1f}{title}\u{1f}{artist}\u{1f}{album}");
     let (album_art_id, album_art_url) = match album_art(&properties, &track_key, known_art_id) {
@@ -313,6 +381,9 @@ fn read_media_info(
         position_ms,
         duration_ms,
         source: friendly_source(&app_id),
+        can_seek: modes.can_seek,
+        shuffle: modes.shuffle,
+        repeat: modes.repeat,
     }))
 }
 
@@ -367,6 +438,40 @@ pub fn media_previous(state: State<'_, MediaState>) -> Result<(), String> {
     })
 }
 
+/// Jumps to `position_ms` from the start of the track.
+#[tauri::command(async)]
+pub fn media_seek(state: State<'_, MediaState>, position_ms: u64) -> Result<(), String> {
+    control_session(&state, "seek", |session| {
+        let start = session
+            .GetTimelineProperties()
+            .and_then(|timeline| timeline.StartTime())
+            .map(|t| t.Duration)
+            .unwrap_or(0);
+        let offset = i64::try_from(position_ms)
+            .unwrap_or(i64::MAX)
+            .saturating_mul(TICKS_PER_MS);
+        session
+            .TryChangePlaybackPositionAsync(start.saturating_add(offset))?
+            .join()
+    })
+}
+
+#[tauri::command(async)]
+pub fn media_set_shuffle(state: State<'_, MediaState>, active: bool) -> Result<(), String> {
+    control_session(&state, "shuffle", |session| {
+        session.TryChangeShuffleActiveAsync(active)?.join()
+    })
+}
+
+/// `mode` is "none", "track" or "list".
+#[tauri::command(async)]
+pub fn media_set_repeat(state: State<'_, MediaState>, mode: String) -> Result<(), String> {
+    let repeat = parse_repeat(&mode).ok_or_else(|| format!("unknown repeat mode '{mode}'"))?;
+    control_session(&state, "repeat", |session| {
+        session.TryChangeAutoRepeatModeAsync(repeat)?.join()
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -403,5 +508,13 @@ mod tests {
         assert_eq!(ticks_to_ms(10_000), 1);
         assert_eq!(ticks_to_ms(2_520_000_000), 252_000);
         assert_eq!(ticks_to_ms(-5), 0);
+    }
+
+    #[test]
+    fn repeat_modes_round_trip() {
+        for name in ["none", "track", "list"] {
+            assert_eq!(parse_repeat(name).map(repeat_name), Some(name));
+        }
+        assert_eq!(parse_repeat("all"), None);
     }
 }

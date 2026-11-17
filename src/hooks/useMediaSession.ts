@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import type { MediaInfo } from "../lib/types";
+import type { MediaInfo, RepeatMode } from "../lib/types";
 
 interface MediaSession {
   /** The active media session, or null when nothing is available. */
@@ -8,6 +8,11 @@ interface MediaSession {
   playPause: () => void;
   next: () => void;
   previous: () => void;
+  /** Jumps to a position in ms from the start of the track. */
+  seek: (positionMs: number) => void;
+  toggleShuffle: () => void;
+  /** Off -> repeat all -> repeat one -> off. */
+  cycleRepeat: () => void;
 }
 
 /** After a transport command, give the media app this long to update Windows. */
@@ -15,6 +20,22 @@ const COMMAND_SETTLE_MS = 250;
 
 /** How long a button press outranks what the polls report, in ms. */
 const OPTIMISTIC_HOLD_MS = 800;
+
+/** Seeking and mode changes take apps longer to report back. */
+const OPTIMISTIC_SLOW_HOLD_MS = 1500;
+
+/** A reported position this close to where the seek should be counts as confirmed. */
+const SEEK_TOLERANCE_MS = 1500;
+
+const NEXT_REPEAT: Record<RepeatMode, RepeatMode> = { none: "list", list: "track", track: "none" };
+
+type MediaCommand =
+  | "media_play_pause"
+  | "media_next"
+  | "media_previous"
+  | "media_seek"
+  | "media_set_shuffle"
+  | "media_set_repeat";
 
 /**
  * Rust sends the cover art only when it changed (see `known_art_id`).
@@ -43,7 +64,10 @@ function isSameMedia(a: MediaInfo | null, b: MediaInfo | null): boolean {
     a.is_playing === b.is_playing &&
     a.position_ms === b.position_ms &&
     a.duration_ms === b.duration_ms &&
-    a.source === b.source
+    a.source === b.source &&
+    a.can_seek === b.can_seek &&
+    a.shuffle === b.shuffle &&
+    a.repeat === b.repeat
   );
 }
 
@@ -61,6 +85,12 @@ export function useMediaSession(pollIntervalMs: number | null): MediaSession {
   const requestSeq = useRef(0);
   const lastError = useRef<string | null>(null);
   const optimisticPlay = useRef<{ value: boolean; until: number } | null>(null);
+  const optimisticModes = useRef<{
+    shuffle?: boolean;
+    repeat?: RepeatMode;
+    until: number;
+  } | null>(null);
+  const optimisticSeek = useRef<{ positionMs: number; at: number; until: number } | null>(null);
 
   const commit = useCallback((next: MediaInfo | null) => {
     mediaRef.current = next;
@@ -88,6 +118,30 @@ export function useMediaSession(pollIntervalMs: number | null): MediaSession {
           next = { ...next, is_playing: hold.value };
         } else {
           optimisticPlay.current = null;
+        }
+      }
+
+      const modes = optimisticModes.current;
+      if (modes && next) {
+        if (Date.now() < modes.until) {
+          next = {
+            ...next,
+            ...(modes.shuffle !== undefined && { shuffle: modes.shuffle }),
+            ...(modes.repeat !== undefined && { repeat: modes.repeat }),
+          };
+        } else {
+          optimisticModes.current = null;
+        }
+      }
+
+      // Until the app reports the new position, keep the bar where it was dropped.
+      const seek = optimisticSeek.current;
+      if (seek && next) {
+        const expected = seek.positionMs + (next.is_playing ? Date.now() - seek.at : 0);
+        if (Date.now() < seek.until && Math.abs(next.position_ms - expected) > SEEK_TOLERANCE_MS) {
+          next = { ...next, position_ms: Math.min(expected, next.duration_ms || expected) };
+        } else {
+          optimisticSeek.current = null;
         }
       }
 
@@ -134,12 +188,14 @@ export function useMediaSession(pollIntervalMs: number | null): MediaSession {
   }, [pollIntervalMs, refresh, commit]);
 
   const runCommand = useCallback(
-    async (command: "media_play_pause" | "media_next" | "media_previous") => {
+    async (command: MediaCommand, args?: Record<string, unknown>) => {
       if (!isTauri()) return;
       try {
-        await invoke(command);
+        await invoke(command, args);
       } catch (error) {
         optimisticPlay.current = null;
+        optimisticModes.current = null;
+        optimisticSeek.current = null;
         console.warn(`[useMediaSession] ${command} failed:`, error);
       }
       window.setTimeout(() => void refresh(), COMMAND_SETTLE_MS);
@@ -163,5 +219,51 @@ export function useMediaSession(pollIntervalMs: number | null): MediaSession {
   const next = useCallback(() => void runCommand("media_next"), [runCommand]);
   const previous = useCallback(() => void runCommand("media_previous"), [runCommand]);
 
-  return { media, playPause, next, previous };
+  const seek = useCallback(
+    (positionMs: number) => {
+      const current = mediaRef.current;
+      if (!current?.can_seek || current.duration_ms <= 0) return;
+
+      const target = Math.round(Math.min(Math.max(0, positionMs), current.duration_ms));
+      const now = Date.now();
+      optimisticSeek.current = { positionMs: target, at: now, until: now + OPTIMISTIC_SLOW_HOLD_MS };
+      requestSeq.current += 1;
+      commit({ ...current, position_ms: target });
+
+      void runCommand("media_seek", { positionMs: target });
+    },
+    [commit, runCommand],
+  );
+
+  /** Shows a shuffle/repeat change at once and asks the app to make it. */
+  const changeMode = useCallback(
+    (change: { shuffle: boolean } | { repeat: RepeatMode }) => {
+      const current = mediaRef.current;
+      if (!current) return;
+
+      const held = optimisticModes.current;
+      const kept = held && Date.now() < held.until ? held : {};
+      optimisticModes.current = { ...kept, ...change, until: Date.now() + OPTIMISTIC_SLOW_HOLD_MS };
+      requestSeq.current += 1;
+      commit({ ...current, ...change });
+
+      if ("shuffle" in change) void runCommand("media_set_shuffle", { active: change.shuffle });
+      else void runCommand("media_set_repeat", { mode: change.repeat });
+    },
+    [commit, runCommand],
+  );
+
+  const toggleShuffle = useCallback(() => {
+    const shuffle = mediaRef.current?.shuffle;
+    if (shuffle === null || shuffle === undefined) return;
+    changeMode({ shuffle: !shuffle });
+  }, [changeMode]);
+
+  const cycleRepeat = useCallback(() => {
+    const repeat = mediaRef.current?.repeat;
+    if (!repeat) return;
+    changeMode({ repeat: NEXT_REPEAT[repeat] });
+  }, [changeMode]);
+
+  return { media, playPause, next, previous, seek, toggleShuffle, cycleRepeat };
 }

@@ -77,7 +77,7 @@ const OUTSIDE_CLICK_EVENT = "notch-outside-click";
 const BORDER_WIDTH = 1;
 
 /** Elements that handle their own clicks; clicking them must not open the dashboard. */
-const INTERACTIVE_SELECTOR = "button, input, textarea, select, a, label";
+const INTERACTIVE_SELECTOR = "button, input, textarea, select, a, label, [role=slider]";
 
 /** Fields the user types into; while one has focus the capsule stays open. */
 const TEXT_FIELD_SELECTOR = "input:not([type='range']), textarea";
@@ -289,7 +289,7 @@ export function NotchContainer() {
   // widget is off. Battery saver stretches whatever interval remains.
   const mediaPollIntervalMs =
     scalePoll(isOpen ? MEDIA_POLL_HOVER_MS : MEDIA_POLL_IDLE_MS) ?? MEDIA_POLL_IDLE_MS;
-  const { media, playPause, next, previous } = useMediaSession(
+  const { media, playPause, next, previous, seek, toggleShuffle, cycleRepeat } = useMediaSession(
     !isHidden && widgets.media ? mediaPollIntervalMs : null,
   );
   // The neon outline follows the cover while the track plays; white otherwise.
@@ -667,6 +667,9 @@ export function NotchContainer() {
         onPlayPause={playPause}
         onNext={next}
         onPrevious={previous}
+        onSeek={seek}
+        onToggleShuffle={toggleShuffle}
+        onCycleRepeat={cycleRepeat}
         onCollapse={collapse}
       />
     ) : state === "dragOver" ? (
@@ -678,6 +681,9 @@ export function NotchContainer() {
         onPlayPause={playPause}
         onNext={next}
         onPrevious={previous}
+        onSeek={seek}
+        onToggleShuffle={toggleShuffle}
+        onCycleRepeat={cycleRepeat}
         trailing={
           <>
             <ClockDisplay showSeconds={false} />

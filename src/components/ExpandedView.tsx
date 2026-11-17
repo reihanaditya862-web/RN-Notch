@@ -18,6 +18,9 @@ interface ExpandedViewProps {
   onPlayPause: () => void;
   onNext: () => void;
   onPrevious: () => void;
+  onSeek: (positionMs: number) => void;
+  onToggleShuffle: () => void;
+  onCycleRepeat: () => void;
   /** Closes the dashboard. */
   onCollapse: () => void;
 }
@@ -37,6 +40,9 @@ export function ExpandedView({
   onPlayPause,
   onNext,
   onPrevious,
+  onSeek,
+  onToggleShuffle,
+  onCycleRepeat,
   onCollapse,
 }: ExpandedViewProps) {
   const hasBody = widgets.system || widgets.file_shelf || widgets.scratchpad;
@@ -82,6 +88,9 @@ export function ExpandedView({
                 onPlayPause={onPlayPause}
                 onNext={onNext}
                 onPrevious={onPrevious}
+                onSeek={onSeek}
+                onToggleShuffle={onToggleShuffle}
+                onCycleRepeat={onCycleRepeat}
                 className="p-0"
                 trailing={corner}
               />

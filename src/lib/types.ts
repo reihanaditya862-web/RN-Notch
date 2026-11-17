@@ -12,7 +12,15 @@ export interface MediaInfo {
   duration_ms: number;
   /** Friendly name of the app that owns the session, e.g. "Spotify". */
   source: string;
+  /** Whether the app accepts a new playback position. */
+  can_seek: boolean;
+  /** Shuffle on or off; null when the app does not offer shuffle. */
+  shuffle: boolean | null;
+  /** Repeat mode; null when the app does not offer repeat. */
+  repeat: RepeatMode | null;
 }
+
+export type RepeatMode = "none" | "track" | "list";
 
 /** Mirrors the Rust `SystemInfo` struct in `src-tauri/src/commands/system.rs`. */
 export interface SystemInfo {
