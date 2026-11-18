@@ -22,7 +22,7 @@ import type { Alert, AlertIcon, AlertSymbol } from "../lib/alerts";
 import { initials } from "../lib/f1";
 import { useNotchStore } from "../stores/notchStore";
 import { F1LaunchAnimation } from "./widgets/F1LaunchAnimation";
-import { TeamLogo } from "./widgets/TeamLogo";
+import { TeamBackdrop } from "./widgets/TeamLogo";
 
 const SYMBOLS: Record<AlertSymbol, LucideIcon> = {
   wifi: Wifi,
@@ -156,13 +156,10 @@ function WinnerAlert({ alert }: { alert: Alert }) {
   if (!winner) return null;
   return (
     <div className="relative flex h-full w-full items-center gap-3 overflow-hidden pr-2.5 pl-4">
+      {/* Team colour and logo behind the photo and the name, larger than the photo. */}
+      <TeamBackdrop logo={winner.teamLogo} color={winner.teamColor} logoHeight={112} />
       <span
-        aria-hidden="true"
-        className="absolute top-0 bottom-0 left-0 w-1"
-        style={{ backgroundColor: winner.teamColor }}
-      />
-      <span
-        className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full border-2"
+        className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 shadow-[0_4px_14px_rgb(0_0_0/0.45)]"
         style={{ borderColor: winner.teamColor, backgroundColor: `${winner.teamColor}33` }}
       >
         {winner.photo ? (
@@ -173,7 +170,7 @@ function WinnerAlert({ alert }: { alert: Alert }) {
           </span>
         )}
       </span>
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+      <span className="relative flex min-w-0 flex-1 flex-col gap-0.5 [text-shadow:0_1px_6px_rgb(0_0_0/0.65)]">
         <span
           className="flex items-center gap-1 text-[10px] leading-3 font-semibold tracking-[0.08em] uppercase"
           style={{ color: winner.teamColor }}
@@ -189,8 +186,9 @@ function WinnerAlert({ alert }: { alert: Alert }) {
           {winner.grandPrix} · {winner.team}
         </span>
       </span>
-      {winner.teamLogo && <TeamLogo src={winner.teamLogo} team={winner.team} />}
-      <DismissButton alert={alert} />
+      <span className="relative">
+        <DismissButton alert={alert} />
+      </span>
     </div>
   );
 }

@@ -12,7 +12,7 @@ import {
 import { useNotchStore } from "../../stores/notchStore";
 import { DigitText } from "../widgets/DigitText";
 import { F1LaunchAnimation } from "../widgets/F1LaunchAnimation";
-import { TeamLogo } from "../widgets/TeamLogo";
+import { TeamBackdrop } from "../widgets/TeamLogo";
 import { PageHeader, SectionLabel } from "./PageHeader";
 
 /** The launch animation plays once a day, the first time the page opens in race week. */
@@ -153,9 +153,11 @@ export function F1Page({ onCollapse }: { onCollapse: () => void }) {
       </section>
 
       {winner && (
-        <div className="flex h-9 shrink-0 items-center gap-2 rounded-lg bg-notch-surface/70 pr-2.5 pl-1.5">
+        <div className="relative flex h-11 shrink-0 items-center gap-2.5 overflow-hidden rounded-lg pr-2.5 pl-2">
+          {/* Team colour and logo behind the photo and the name, larger than the photo. */}
+          <TeamBackdrop logo={winner.teamLogo} color={teamColor(winner.teamId)} logoHeight={66} />
           <span
-            className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border"
+            className="relative flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full border shadow-[0_3px_10px_rgb(0_0_0/0.45)]"
             style={{ borderColor: teamColor(winner.teamId), backgroundColor: `${teamColor(winner.teamId)}33` }}
           >
             {winner.photo ? (
@@ -164,8 +166,8 @@ export function F1Page({ onCollapse }: { onCollapse: () => void }) {
               <span className="text-[10px] font-bold text-notch-primary">{initials(winner.driver)}</span>
             )}
           </span>
-          <span className="flex min-w-0 flex-1 flex-col">
-            <span className="flex items-center gap-1 text-[9px] leading-3 tracking-[0.06em] text-notch-tertiary uppercase">
+          <span className="relative flex min-w-0 flex-1 flex-col [text-shadow:0_1px_6px_rgb(0_0_0/0.65)]">
+            <span className="flex items-center gap-1 text-[9px] leading-3 tracking-[0.06em] text-notch-secondary uppercase">
               <Flag size={9} strokeWidth={2} aria-hidden="true" />
               Last winner · {winner.raceName}
             </span>
@@ -174,11 +176,6 @@ export function F1Page({ onCollapse }: { onCollapse: () => void }) {
               <span className="font-normal text-notch-secondary"> · {winner.team}</span>
             </span>
           </span>
-          {winner.teamLogo ? (
-            <TeamLogo src={winner.teamLogo} team={winner.team} small />
-          ) : (
-            <span className="h-5 w-1 shrink-0 rounded-full" style={{ backgroundColor: teamColor(winner.teamId) }} aria-hidden="true" />
-          )}
         </div>
       )}
     </div>
