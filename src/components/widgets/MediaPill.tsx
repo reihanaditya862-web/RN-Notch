@@ -93,7 +93,7 @@ function ControlButton({
       aria-pressed={pressed}
       onClick={onClick}
       disabled={disabled}
-      style={pressed ? { color: "var(--notch-accent-light, var(--notch-gradient-to))" } : undefined}
+      style={pressed ? { color: "var(--notch-accent-light, #ffffff)" } : undefined}
       className={[
         "relative flex h-6 items-center justify-center rounded-md",
         compact ? "w-5" : "w-6",
@@ -117,7 +117,7 @@ function ControlButton({
 const SEEK_STEP_MS = 5000;
 
 const ACCENT_GRADIENT =
-  "linear-gradient(90deg, var(--notch-accent, var(--notch-gradient-deep-from)), var(--notch-accent-light, var(--notch-gradient-deep-to)))";
+  "linear-gradient(90deg, var(--notch-accent-1, #ffffff), var(--notch-accent-2, #ffffff), var(--notch-accent-3, #ffffff))";
 
 interface SeekBarProps {
   media: MediaInfo | null;
@@ -126,7 +126,8 @@ interface SeekBarProps {
 }
 
 /**
- * Thin progress bar in the cover's colour. Where the app allows it, a click or
+ * Thin progress bar in the cover's colours (white while paused or without a
+ * cover). Where the app allows it, a click or
  * drag jumps to that point and the arrow keys step 5 seconds back or ahead.
  * The hit area is taller than the 3px line so it is easy to grab.
  */

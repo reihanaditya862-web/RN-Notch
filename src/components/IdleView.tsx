@@ -36,7 +36,7 @@ function DndIndicator() {
 export function IdleView({ media, isDndEnabled }: IdleViewProps) {
   const clock = (
     <ErrorBoundary label="Clock" fallback={null}>
-      <ClockDisplay showSeconds={!media} />
+      <ClockDisplay />
     </ErrorBoundary>
   );
   const battery = (

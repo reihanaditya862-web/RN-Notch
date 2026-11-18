@@ -1,6 +1,6 @@
 [package]
 name = "windows-dynamic-island"
-version = "1.0.0"
+version = "1.1.0"
 description = "RN Notch - a Dynamic Island / notch for Windows"
 authors = ["RN"]
 edition = "2024"
@@ -29,6 +29,8 @@ sysinfo = { version = "0.32", default-features = false, features = ["system"] }
 
 # Windows-only APIs. Same version Tauri itself depends on, so only one copy is compiled.
 [target.'cfg(windows)'.dependencies]
+# For declaring IPolicyConfig (default audio device), which the SDK does not publish.
+windows-core = "0.62"
 windows = { version = "0.62", features = [
     # Media session (SMTC)
     "Media_Control",
@@ -50,6 +52,31 @@ windows = { version = "0.62", features = [
     "Win32_UI_Input_KeyboardAndMouse",
     # Monitor bounds, to tell a fullscreen window from a maximized one
     "Win32_Graphics_Gdi",
+    # Windows notifications (listener) and the logos of the apps that sent them
+    "UI_Notifications",
+    "UI_Notifications_Management",
+    "ApplicationModel",
+    "Foundation_Collections",
+    # Wi-Fi and Bluetooth status pop-ups
+    "Networking_Connectivity",
+    "Devices_Bluetooth",
+    "Devices_Enumeration",
+    # F1 schedule and results (Jolpica API), driver photos
+    "Web_Http",
+    "Web_Http_Headers",
+    # Clipboard history
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+    # App icons, process names for the volume mixer, default audio device
+    "Win32_UI_Shell",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Threading",
+    "Win32_UI_Shell_PropertiesSystem",
+    "Win32_Devices_FunctionDiscovery",
+    "Win32_Devices_Properties",
+    # Is the session locked? (background loops ease off)
+    "Win32_System_StationsAndDesktops",
 ] }
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

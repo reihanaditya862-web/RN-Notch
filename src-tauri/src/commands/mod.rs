@@ -1,6 +1,17 @@
+pub mod apps;
 pub mod audio;
 pub mod autostart;
+pub mod background;
+pub mod clipboard;
+pub mod hardware;
+pub mod http;
+pub mod icons;
 pub mod media;
+pub mod mixer;
+pub mod notifications;
+pub mod picker;
+pub mod schedules;
+pub mod screen_tools;
 pub mod settings;
 pub mod system;
 pub mod window_detector;

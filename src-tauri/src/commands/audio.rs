@@ -1,12 +1,14 @@
 //! Master volume of the default playback device, through Windows Core Audio
-//! (`IAudioEndpointVolume`).
+//! (`IAudioEndpointVolume`). The output device switch, microphone mute and
+//! per-app mixer live in `mixer.rs`.
 
 use std::ptr;
-use std::sync::OnceLock;
 
 use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
 use windows::Win32::Media::Audio::{IMMDeviceEnumerator, MMDeviceEnumerator, eMultimedia, eRender};
-use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance, CoIncrementMTAUsage};
+use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
+
+use super::background::ensure_com;
 
 /// Master volume snapshot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -14,19 +16,6 @@ pub struct VolumeState {
     /// 0-100.
     pub percent: u8,
     pub muted: bool,
-}
-
-/// Makes COM usable from any thread of the process.
-///
-/// Commands run on the async runtime's worker threads, which never initialize
-/// COM themselves. Holding one MTA usage reference for the lifetime of the app
-/// puts every such thread in the multithreaded apartment implicitly.
-fn ensure_com() {
-    static MTA: OnceLock<()> = OnceLock::new();
-    MTA.get_or_init(|| {
-        // The cookie is deliberately never released.
-        let _ = unsafe { CoIncrementMTAUsage() };
-    });
 }
 
 /// Volume control of the current default output device.

@@ -9,6 +9,12 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(() => ({
   plugins: [react(), tailwindcss()],
 
+  // The app is loaded from disk inside the installer, so one bundle of this
+  // size costs nothing; the default 500 kB warning is meant for the web.
+  build: {
+    chunkSizeWarningLimit: 900,
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors

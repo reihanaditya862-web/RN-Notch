@@ -1,10 +1,11 @@
 /**
- * The neon outline takes its colour from the cover of what is playing.
+ * The neon outline, the waveform and the seek bar take their colours from
+ * the cover of what is playing.
  *
  * The cover is drawn into a 24x24 canvas and its pixels are grouped by hue;
- * the hue with the most saturated, reasonably bright pixels wins. That picks
- * the colour that reads as "the cover's colour" rather than the average,
- * which for most covers is a muddy grey-brown. The result is then lifted so
+ * the hues with the most saturated, reasonably bright pixels win. That picks
+ * the colours that read as "the cover's colours" rather than the average,
+ * which for most covers is a muddy grey-brown. Each is then lifted so
  * a thin line of it still glows on the black capsule.
  */
 
@@ -19,14 +20,14 @@ const MAX_LIGHTNESS = 0.72;
 const MIN_OUTPUT_SATURATION = 0.6;
 const CACHE_LIMIT = 32;
 
-/** Cover key -> colour, or null when the cover has no colour to speak of. */
-const cache = new Map<string, string | null>();
+/** Cover key -> its colours (1-3), or null when the cover has no colour to speak of. */
+const cache = new Map<string, string[] | null>();
 
-export function cachedAccent(key: string): string | null | undefined {
+export function cachedPalette(key: string): string[] | null | undefined {
   return cache.get(key);
 }
 
-export async function extractAccent(key: string, imageUrl: string): Promise<string | null> {
+export async function extractPalette(key: string, imageUrl: string): Promise<string[] | null> {
   const cached = cache.get(key);
   if (cached !== undefined) return cached;
 
@@ -39,16 +40,30 @@ export async function extractAccent(key: string, imageUrl: string): Promise<stri
   const context = canvas.getContext("2d", { willReadFrequently: true });
   if (!context) return null;
   context.drawImage(image, 0, 0, SAMPLE_SIZE, SAMPLE_SIZE);
-  const color = pickAccent(context.getImageData(0, 0, SAMPLE_SIZE, SAMPLE_SIZE).data);
+  const palette = pickPalette(context.getImageData(0, 0, SAMPLE_SIZE, SAMPLE_SIZE).data);
 
   if (cache.size >= CACHE_LIMIT) cache.delete(cache.keys().next().value as string);
-  cache.set(key, color);
-  return color;
+  cache.set(key, palette);
+  return palette;
 }
 
-/** Dominant vivid colour of RGBA pixels as #RRGGBB, or null for grey/black images. */
-export function pickAccent(pixels: Uint8ClampedArray): string | null {
-  const buckets = Array.from({ length: HUE_BUCKETS }, () => ({ weight: 0, r: 0, g: 0, b: 0 }));
+/** A hue that holds at least this share of the strongest one joins the palette. */
+const SECONDARY_SHARE = 0.07;
+const MAX_COLORS = 3;
+
+/**
+ * The cover's vivid colours as #RRGGBB, strongest first (one to three), or
+ * null for a grey or black image. Neighbouring hues count as one colour, so
+ * the palette has real contrast rather than three shades of the same red.
+ */
+export function pickPalette(pixels: Uint8ClampedArray): string[] | null {
+  const buckets = Array.from({ length: HUE_BUCKETS }, (_, index) => ({
+    index,
+    weight: 0,
+    r: 0,
+    g: 0,
+    b: 0,
+  }));
 
   for (let i = 0; i < pixels.length; i += 4) {
     if (pixels[i + 3] < 128) continue;
@@ -69,9 +84,22 @@ export function pickAccent(pixels: Uint8ClampedArray): string | null {
     bucket.b += b * weight;
   }
 
-  const best = buckets.reduce((a, b) => (b.weight > a.weight ? b : a));
+  const ranked = [...buckets].sort((a, b) => b.weight - a.weight);
+  const best = ranked[0];
   if (best.weight === 0) return null;
-  return toNeon(best.r / best.weight, best.g / best.weight, best.b / best.weight);
+
+  const isNeighbour = (a: number, b: number) => {
+    const distance = Math.abs(a - b);
+    return Math.min(distance, HUE_BUCKETS - distance) <= 1;
+  };
+  const chosen = [best];
+  for (const bucket of ranked.slice(1)) {
+    if (chosen.length >= MAX_COLORS || bucket.weight < best.weight * SECONDARY_SHARE) break;
+    if (!chosen.some((picked) => isNeighbour(picked.index, bucket.index))) chosen.push(bucket);
+  }
+  return chosen.map((bucket) =>
+    toNeon(bucket.r / bucket.weight, bucket.g / bucket.weight, bucket.b / bucket.weight),
+  );
 }
 
 function hueOf(r: number, g: number, b: number, max: number, min: number): number {

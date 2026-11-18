@@ -13,8 +13,8 @@ const BAR_WIDTH = 2;
 const BAR_GAP = 2;
 
 /**
- * Small music visualizer in the colour of the track's cover (--notch-accent,
- * set by NotchContainer), or the blue-to-purple accent when there is none.
+ * Small music visualizer in the colours of the track's cover (--notch-accent-1
+ * and -2, set by NotchContainer while it plays), or white when there are none.
  *
  * It is a looping decoration, not a reading of the actual audio. The loop is
  * pure CSS (transform only) and stops under battery saver and reduced motion.
@@ -36,14 +36,14 @@ export function MediaWaveform({ isPlaying, size = 14 }: MediaWaveformProps) {
           <stop
             offset="0"
             style={{
-              stopColor: "var(--notch-accent, var(--notch-gradient-deep-from))",
+              stopColor: "var(--notch-accent-1, #ffffff)",
               transition: "stop-color 350ms ease",
             }}
           />
           <stop
             offset="1"
             style={{
-              stopColor: "var(--notch-accent-light, var(--notch-gradient-to))",
+              stopColor: "var(--notch-accent-2, #ffffff)",
               transition: "stop-color 350ms ease",
             }}
           />

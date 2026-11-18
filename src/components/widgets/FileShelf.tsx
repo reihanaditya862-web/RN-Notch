@@ -1,5 +1,7 @@
-import { isTauri } from "@tauri-apps/api/core";
+import { useRef } from "react";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { toastAlert } from "../../lib/alerts";
 import {
   File,
   FileArchive,
@@ -45,15 +47,52 @@ interface ShelfItemProps {
   onRemove: (id: string) => void;
 }
 
+/** How far (px) the pointer moves with the button held before it is a drag. */
+const DRAG_THRESHOLD = 5;
+
+/**
+ * Hands the file to Windows' own drag and drop, so it can be dropped into a
+ * browser upload, a chat or a design tool exactly as from Explorer. The
+ * capsule ignores its own window as a drop target meanwhile.
+ */
+function dragOut(file: ShelfFile): void {
+  if (!isTauri()) return;
+  const store = useNotchStore.getState();
+  store.setDraggingOut(true);
+  invoke<string>("start_file_drag", { path: file.path })
+    .catch((error: unknown) => {
+      console.warn("[FileShelf] drag failed:", error);
+      store.pushAlert(
+        toastAlert("Could not drag the file", String(error), { type: "symbol", name: "error" }, "warning"),
+      );
+    })
+    .finally(() => useNotchStore.getState().setDraggingOut(false));
+}
+
 function ShelfItem({ file, onRemove }: ShelfItemProps) {
   const Icon = iconFor(file.name);
+  const press = useRef<{ x: number; y: number; dragged: boolean } | null>(null);
 
   return (
     <li className="group relative min-w-0">
       <button
         type="button"
-        onClick={() => revealInExplorer(file)}
-        title={`${file.path}\nClick to show in Explorer`}
+        onPointerDown={(event) => {
+          if (event.button === 0) press.current = { x: event.clientX, y: event.clientY, dragged: false };
+        }}
+        onPointerMove={(event) => {
+          const start = press.current;
+          if (!start || start.dragged || (event.buttons & 1) === 0) return;
+          if (Math.hypot(event.clientX - start.x, event.clientY - start.y) < DRAG_THRESHOLD) return;
+          start.dragged = true;
+          dragOut(file);
+        }}
+        onClick={() => {
+          const wasDragged = press.current?.dragged ?? false;
+          press.current = null;
+          if (!wasDragged) revealInExplorer(file);
+        }}
+        title={`${file.path}\nDrag into another app, or click to show in Explorer`}
         aria-label={`${file.name}. Show in Explorer`}
         className={[
           "flex h-full w-full flex-col items-center justify-center gap-1 rounded-lg px-1.5",
@@ -87,11 +126,12 @@ function ShelfItem({ file, onRemove }: ShelfItemProps) {
 }
 
 /**
- * Temporary shelf for files dragged in from Windows Explorer (up to five).
+ * Temporary shelf for files dragged in from Windows Explorer (up to three).
  *
  * The drop itself is received by `useFileDrop` - the whole capsule is the drop
- * target - and this widget shows what is parked. Clicking a file opens its
- * folder in Explorer with the file selected. Only paths are stored.
+ * target - and this widget shows what is parked. A file can be dragged out
+ * again into any app; clicking it opens its folder in Explorer with the file
+ * selected. Only paths are stored.
  */
 export function FileShelf() {
   const files = useNotchStore((store) => store.shelfFiles);
@@ -105,7 +145,7 @@ export function FileShelf() {
       >
         <Paperclip size={14} strokeWidth={1.5} aria-hidden="true" />
         <p className="text-[12px] leading-4">
-          Drag files onto the island to park them
+          Drop files here, drag them out into any app
           <span className="font-mono text-[10px]"> · max {SHELF_MAX_FILES}</span>
         </p>
       </section>
@@ -116,7 +156,7 @@ export function FileShelf() {
 
   return (
     <section aria-label={`File shelf, ${files.length} of ${SHELF_MAX_FILES} files`}>
-      <ul className="grid h-[50px] grid-cols-5 gap-1.5">
+      <ul className="grid h-[50px] grid-cols-3 gap-1.5">
         {files.map((file) => (
           <ShelfItem key={file.id} file={file} onRemove={removeShelfFile} />
         ))}

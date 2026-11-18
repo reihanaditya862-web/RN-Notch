@@ -66,3 +66,22 @@ export function hueFromHex(hex: string): number {
     : (r - g) / delta + 4;
   return Math.round((sector * 60 + 360) % 360);
 }
+
+/**
+ * The colour a copied text stands for, as "#RRGGBB": "#3a7", "#33AA77",
+ * "rgb(51, 170, 119)" or "rgba(51,170,119,0.5)". Null for anything else.
+ */
+export function colorFromText(text: string): string | null {
+  const value = text.trim();
+  const short = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(value);
+  if (short) return `#${short[1]}${short[1]}${short[2]}${short[2]}${short[3]}${short[3]}`.toUpperCase();
+  if (isHexColor(value)) return value.toUpperCase();
+
+  const rgb = /^rgba?\(\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*(?:[,/]\s*[\d.]+%?\s*)?\)$/i.exec(
+    value,
+  );
+  if (!rgb) return null;
+  const channels = rgb.slice(1, 4).map(Number);
+  if (channels.some((channel) => channel > 255)) return null;
+  return `#${channels.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`.toUpperCase();
+}

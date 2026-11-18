@@ -71,10 +71,18 @@ export const NOTCH_SIZES: Record<NotchState, { width: number; height: number; ra
   idle: { width: 196, height: 28, radius: 14 },
   idleMedia: { width: 280, height: 28, radius: 14 },
   hover: { width: 360, height: 100, radius: 16 },
-  expanded: { width: 420, height: 280, radius: 24 },
+  expanded: { width: 420, height: 300, radius: 24 },
   settings: { width: 420, height: 380, radius: 24 },
   dragOver: { width: 340, height: 100, radius: 24 },
+  // The width of a pop-up follows its text; see `alertSize` in lib/alerts.ts.
+  alert: { width: 320, height: 52, radius: 26 },
 };
+
+/**
+ * The AI shortcuts below the media controls: hidden until the cursor reaches
+ * the bottom edge of the pop-up, then the pop-up grows by this much.
+ */
+export const AI_DRAWER_HEIGHT = 34;
 
 /** Settings used until the real ones arrive from Rust; same values as its defaults. */
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -85,7 +93,33 @@ export const DEFAULT_SETTINGS: AppSettings = {
   glow_end: GLOW_END_DEFAULT,
   active_widgets: { media: true, system: true, file_shelf: true, scratchpad: true },
   dnd_enabled: false,
+  features: {
+    notifications: true,
+    hardware_alerts: true,
+    clipboard_history: true,
+    audio_mixer: true,
+    f1_hub: true,
+  },
 };
+
+/** Clipboard history entries kept in memory (text and colour codes only). */
+export const CLIPBOARD_MAX_ITEMS = 10;
+
+/** How long each kind of pop-up stays, in ms (the cursor on it pauses the count). */
+export const ALERT_DURATION_MS = {
+  hardware: 3500,
+  notification: 5000,
+  toast: 2500,
+  f1Session: 7000,
+  f1Winner: 12000,
+} as const;
+
+/** At most this many pop-ups wait in the queue; the least important go first. */
+export const ALERT_QUEUE_LIMIT = 8;
+
+/** Focus timer defaults, in minutes. */
+export const POMODORO_FOCUS_OPTIONS = [15, 25, 45, 50] as const;
+export const POMODORO_BREAK_OPTIONS = [5, 10, 15] as const;
 
 export const OPACITY_MIN = 0.7;
 export const OPACITY_MAX = 1;
@@ -170,7 +204,7 @@ export const SYSTEM_POLL_IDLE_MS = 5000;
 export const SYSTEM_POLL_EXPANDED_MS = 2000;
 
 /** File shelf limits. */
-export const SHELF_MAX_FILES = 5;
+export const SHELF_MAX_FILES = 3;
 export const SHELF_FILE_TTL_MS = 30 * 60 * 1000;
 
 /** Shadow under the expanded capsule; the idle capsule has none. */

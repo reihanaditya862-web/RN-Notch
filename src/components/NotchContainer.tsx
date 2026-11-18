@@ -20,14 +20,20 @@ import {
 } from "framer-motion";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useAlbumAccent } from "../hooks/useAlbumAccent";
+import { useAlbumPalette } from "../hooks/useAlbumPalette";
+import { useAlertTimer } from "../hooks/useAlertTimer";
+import { useBackgroundPause } from "../hooks/useBackgroundPause";
 import { useBatterySaver } from "../hooks/useBatterySaver";
+import { useF1Hub } from "../hooks/useF1Hub";
 import { useFileDrop } from "../hooks/useFileDrop";
 import { useForegroundState } from "../hooks/useForegroundState";
 import { useHoverDelay } from "../hooks/useHoverDelay";
 import { useMediaSession } from "../hooks/useMediaSession";
+import { useNativeEvents } from "../hooks/useNativeEvents";
+import { usePomodoro } from "../hooks/usePomodoro";
 import { saveSettingsNow, useSettingsSync } from "../hooks/useSettingsSync";
 import { useSystemInfo } from "../hooks/useSystemInfo";
+import { alertSize } from "../lib/alerts";
 import {
   APP_NAME,
   ENTRANCE_OFFSET_Y,
@@ -51,6 +57,7 @@ import {
   VISIBILITY_FADE_S,
 } from "../lib/constants";
 import { getNotchShape, isCollapsedState, type NotchShape } from "../lib/layout";
+import { currentPage, dashboardHeight, dashboardPages } from "../lib/pages";
 import { buildFillPath, buildStrokePath } from "../lib/notchPath";
 import { useNotchStore } from "../stores/notchStore";
 import {
@@ -60,14 +67,17 @@ import {
   ContextMenu,
   placeContextMenu,
 } from "./ContextMenu";
+import { AlertBanner, AlertView } from "./AlertView";
+import { Dashboard } from "./Dashboard";
 import { DragOverlay } from "./DragOverlay";
 import { ErrorBoundary } from "./ErrorBoundary";
-import { ExpandedView } from "./ExpandedView";
 import { IdleView } from "./IdleView";
 import { SettingsModal } from "./SettingsModal";
+import { AI_TRIGGER_HEIGHT, AiDrawer } from "./widgets/AiDrawer";
 import { BatteryIndicator } from "./widgets/BatteryIndicator";
 import { ClockDisplay } from "./widgets/ClockDisplay";
 import { MediaPill } from "./widgets/MediaPill";
+import { PomodoroRing } from "./widgets/PomodoroRing";
 
 /** Events emitted by the Rust cursor watcher. */
 const HOVER_EVENT = "notch-hover";
@@ -111,6 +121,19 @@ function animateTo(value: MotionValue<number>, target: number, transition: Trans
  */
 function topCurveOf(shape: NotchShape): number {
   return shape.earRadius > 0 ? shape.earRadius : -shape.topRadius;
+}
+
+/**
+ * The three stops of the neon line's gradient, left ear to right ear: the
+ * cover's colours spread across the outline (one colour gets a lighter
+ * middle, two meet in the middle), or plain white without a playing cover.
+ */
+function neonGradientStops(palette: string[] | null): [string, string, string] {
+  if (!palette || palette.length === 0) return [NEON_IDLE_COLOR, NEON_IDLE_COLOR, NEON_IDLE_COLOR];
+  const [first, second, third] = palette;
+  if (!second) return [first, `color-mix(in srgb, ${first} 60%, white)`, first];
+  if (!third) return [first, `color-mix(in srgb, ${first} 50%, ${second})`, second];
+  return [first, second, third];
 }
 
 /**
@@ -194,10 +217,15 @@ function reportHitRegions(
  * States (see `NOTCH_SIZES`):
  * - `idle`      - nothing playing: clock + battery.
  * - `idleMedia` - music playing, cursor away: adds waveform and song title.
- * - `hover`     - cursor resting on the capsule: media player.
- * - `expanded`  - capsule clicked: dashboard of the active widgets.
+ * - `hover`     - cursor resting on the capsule: media player, with the AI
+ *                 drawer below it when the cursor reaches the bottom edge.
+ * - `expanded`  - capsule clicked: the dashboard and its pages (media,
+ *                 today's schedule, clipboard and shelf, tools, F1).
  * - `settings`  - settings panel.
  * - `dragOver`  - a file is being dragged over the capsule.
+ * - `alert`     - the pop-up at the head of the alert queue (hardware,
+ *                 notification, F1, toast), as wide as its text. Over the
+ *                 dashboard and settings it shows as a banner instead.
  *
  * Shape (see `getNotchShape`): "island" floats below the top edge as a pill;
  * "notch" touches the edge and flares into it with two ears.
@@ -232,6 +260,7 @@ export function NotchContainer() {
   const reducedMotion = useReducedMotion();
   const glowStartId = useId();
   const glowEndId = useId();
+  const neonGradientId = useId();
 
   const [cursorOver, setCursorOver] = useState(false);
   const [isPressing, setIsPressing] = useState(false);
@@ -250,16 +279,21 @@ export function NotchContainer() {
   const isSettingsOpen = useNotchStore((store) => store.isSettingsOpen);
   const isFullscreenApp = useNotchStore((store) => store.foreground.is_fullscreen);
   const isMaximizedApp = useNotchStore((store) => store.foreground.is_window_maximized);
+  const isLocked = useNotchStore((store) => store.foreground.is_locked);
+  const isCapturing = useNotchStore((store) => store.isCapturing);
+  const currentAlert = useNotchStore((store) => store.alerts[0] ?? null);
+  const isDrawerOpen = useNotchStore((store) => store.isDrawerOpen);
 
   const widgets = settings.active_widgets;
   const isNotchMode = settings.display_mode === "notch";
   const isOpen = state === "hover" || state === "expanded";
   const isRaised = !isCollapsedState(state);
   /**
-   * Off screen: hidden from the tray, stepping aside for a fullscreen app, or
-   * still waiting for the saved settings at startup.
+   * Off screen: hidden from the tray, stepping aside for a fullscreen app or
+   * a screenshot, behind the lock screen, or still waiting for the saved
+   * settings at startup.
    */
-  const isHidden = !isReady || !isUserVisible || isFullscreenApp;
+  const isHidden = !isReady || !isUserVisible || isFullscreenApp || isLocked || isCapturing;
 
   // Over a maximized app the cursor has to rest a moment before it counts,
   // so a pass on the way to a browser tab does not open the capsule.
@@ -275,15 +309,41 @@ export function NotchContainer() {
   /** The capsule is currently drawn as the lip. */
   const isRetracted = wantsRetract && !isRaised;
 
+  // A pop-up is as wide as its text; measured once per pop-up.
+  const alertDimensions = useMemo(
+    () => (currentAlert ? alertSize(currentAlert) : undefined),
+    [currentAlert],
+  );
+
+  // The dashboard is as tall as the page on show needs.
+  const chosenPage = useNotchStore((store) => store.dashboardPage);
+  const pageHeight = dashboardHeight(currentPage(dashboardPages(settings), chosenPage).id, settings);
+
   // Width, height and position come from this one place.
   const shape = useMemo(
-    () => getNotchShape(state, settings, { isRetracted: wantsRetract, uiScale }),
-    [state, settings, wantsRetract, uiScale],
+    () =>
+      getNotchShape(state, settings, {
+        isRetracted: wantsRetract,
+        uiScale,
+        isDrawerOpen,
+        alertSize: alertDimensions,
+        dashboardHeight: pageHeight,
+      }),
+    [state, settings, wantsRetract, uiScale, isDrawerOpen, alertDimensions, pageHeight],
   );
 
   useSettingsSync();
   useForegroundState();
+  useNativeEvents();
+  usePomodoro();
+  useF1Hub(isReady && settings.features.f1_hub);
   const { isBatterySaver, scalePoll } = useBatterySaver();
+  useBackgroundPause(isHidden || isBatterySaver);
+
+  // The pop-up on screen goes when its time is up; the cursor on it holds it.
+  // A banner over the dashboard keeps counting: the cursor is there for the
+  // dashboard, and the banner must not sit on its header for good.
+  useAlertTimer(currentAlert, cursorOver && state === "alert");
 
   // Nothing is polled while the capsule is off screen, and no media while its
   // widget is off. Battery saver stretches whatever interval remains.
@@ -292,10 +352,11 @@ export function NotchContainer() {
   const { media, playPause, next, previous, seek, toggleShuffle, cycleRepeat } = useMediaSession(
     !isHidden && widgets.media ? mediaPollIntervalMs : null,
   );
-  // The neon outline follows the cover while the track plays; white otherwise.
-  // The waveform keeps the cover's colour while paused too (--notch-accent).
-  const coverAccent = useAlbumAccent(media);
-  const neonColor = (media?.is_playing ? coverAccent : null) ?? NEON_IDLE_COLOR;
+  // The neon outline, the waveform and the seek bar take the cover's colours
+  // while the track plays, and turn white when it pauses or has no cover.
+  const coverPalette = useAlbumPalette(media);
+  const livePalette = media?.is_playing ? coverPalette : null;
+  const neonStops = neonGradientStops(livePalette);
   useSystemInfo(
     isHidden
       ? null
@@ -349,6 +410,7 @@ export function NotchContainer() {
     store.closeSettings();
     store.setExpanded(false);
     store.setDragOver(false);
+    store.clearAlerts();
   }, [isHidden, reset]);
 
   // --- Cursor ---------------------------------------------------------------
@@ -462,6 +524,15 @@ export function NotchContainer() {
 
   const handleBlur = useCallback(() => setHasTextFocus(false), []);
 
+  // A text field that disappears with its page or panel (the browser sends no
+  // blur then) must not keep the capsule open.
+  useEffect(() => {
+    const focused = document.activeElement;
+    if (!(focused instanceof HTMLElement && focused.matches(TEXT_FIELD_SELECTOR))) {
+      setHasTextFocus(false);
+    }
+  }, [state, chosenPage]);
+
   // --- Dashboard, settings, context menu --------------------------------------
 
   const collapse = useCallback(() => {
@@ -475,10 +546,17 @@ export function NotchContainer() {
     (event: MouseEvent<HTMLDivElement>) => {
       if ((event.target as Element).closest(INTERACTIVE_SELECTOR)) return;
 
+      // A click on a pop-up puts it away.
+      const store = useNotchStore.getState();
+      if (store.state === "alert") {
+        const showing = store.alerts[0];
+        if (showing) store.dismissAlert(showing.id);
+        return;
+      }
+
       // Opening only. Inside the dashboard a click on the background does
       // nothing, so a near miss on the slider or a file never closes it; it
       // closes with the chevron, Esc, or simply by moving the cursor away.
-      const store = useNotchStore.getState();
       if (!store.isExpanded && !store.isSettingsOpen) {
         store.setExpanded(true);
         open(); // a click does not wait for the hover delay
@@ -656,44 +734,56 @@ export function NotchContainer() {
 
   const nowPlaying = media ? (media.artist ? `${media.artist} - ${media.title}` : media.title) : null;
 
+  const mediaControls = {
+    media,
+    mediaPollIntervalMs,
+    onPlayPause: playPause,
+    onNext: next,
+    onPrevious: previous,
+    onSeek: seek,
+    onToggleShuffle: toggleShuffle,
+    onCycleRepeat: cycleRepeat,
+  };
+  /** The pop-up's own height inside the border; the AI drawer hangs below it. */
+  const pillHeight = NOTCH_SIZES.hover.height - BORDER_WIDTH * 2;
+
   const content =
     state === "settings" ? (
       <SettingsModal onClose={closeSettings} />
     ) : state === "expanded" ? (
-      <ExpandedView
-        widgets={widgets}
-        media={media}
-        mediaPollIntervalMs={mediaPollIntervalMs}
-        onPlayPause={playPause}
-        onNext={next}
-        onPrevious={previous}
-        onSeek={seek}
-        onToggleShuffle={toggleShuffle}
-        onCycleRepeat={cycleRepeat}
-        onCollapse={collapse}
-      />
+      <Dashboard controls={mediaControls} onCollapse={collapse} />
     ) : state === "dragOver" ? (
       <DragOverlay />
+    ) : state === "alert" && currentAlert ? (
+      <AlertView alert={currentAlert} />
     ) : state === "hover" ? (
-      <MediaPill
-        media={media}
-        pollIntervalMs={mediaPollIntervalMs}
-        onPlayPause={playPause}
-        onNext={next}
-        onPrevious={previous}
-        onSeek={seek}
-        onToggleShuffle={toggleShuffle}
-        onCycleRepeat={cycleRepeat}
-        trailing={
-          <>
-            <ClockDisplay showSeconds={false} />
-            <BatteryIndicator />
-          </>
-        }
-      />
+      <div className="relative h-full w-full">
+        <div style={{ height: pillHeight }}>
+          <MediaPill
+            media={media}
+            pollIntervalMs={mediaPollIntervalMs}
+            onPlayPause={playPause}
+            onNext={next}
+            onPrevious={previous}
+            onSeek={seek}
+            onToggleShuffle={toggleShuffle}
+            onCycleRepeat={cycleRepeat}
+            trailing={
+              <>
+                <ClockDisplay />
+                <BatteryIndicator />
+              </>
+            }
+          />
+        </div>
+        <AiDrawer top={pillHeight - AI_TRIGGER_HEIGHT} />
+      </div>
     ) : (
       <IdleView media={state === "idleMedia" ? media : null} isDndEnabled={settings.dnd_enabled} />
     );
+
+  /** Over the dashboard and the settings panel a pop-up is a banner. */
+  const bannerAlert = (state === "expanded" || state === "settings") && currentAlert ? currentAlert : null;
 
   return (
     <>
@@ -722,9 +812,11 @@ export function NotchContainer() {
           y: entranceY,
           scale: entranceScale,
           transformOrigin: "50% 0%",
-          ...(coverAccent && {
-            "--notch-accent": coverAccent,
-            "--notch-accent-light": `color-mix(in srgb, ${coverAccent} 55%, white)`,
+          ...(livePalette && {
+            "--notch-accent-1": neonStops[0],
+            "--notch-accent-2": neonStops[1],
+            "--notch-accent-3": neonStops[2],
+            "--notch-accent-light": `color-mix(in srgb, ${neonStops[0]} 55%, white)`,
           }),
         }}
         className={[
@@ -743,6 +835,18 @@ export function NotchContainer() {
           aria-hidden="true"
           className="pointer-events-none absolute top-0 left-0 overflow-visible"
         >
+          <defs>
+            {/* Ear to ear across the outline; each stop eases to a new cover's colour. */}
+            <linearGradient id={neonGradientId} x1="0" y1="0" x2="1" y2="0">
+              {neonStops.map((color, index) => (
+                <stop
+                  key={index}
+                  offset={index / 2}
+                  style={{ stopColor: color, transition: "stop-color 350ms ease" }}
+                />
+              ))}
+            </linearGradient>
+          </defs>
           <motion.path
             d={fillPath}
             fill={`rgb(9 9 11 / ${settings.opacity})`}
@@ -757,7 +861,7 @@ export function NotchContainer() {
             key={landingCount}
             d={strokePath}
             fill="none"
-            stroke={neonColor}
+            stroke={`url(#${neonGradientId})`}
             strokeWidth="3"
             opacity={isActive ? 0.5 : 0}
             className={[
@@ -775,11 +879,13 @@ export function NotchContainer() {
           <motion.path
             d={strokePath}
             fill="none"
-            stroke={neonColor}
+            stroke={`url(#${neonGradientId})`}
             strokeWidth={BORDER_WIDTH}
             opacity={isActive ? 0.9 : 0}
             className="notch-outline"
           />
+          {/* The focus timer's progress, running along the same edge. */}
+          <PomodoroRing path={strokePath} />
         </svg>
 
         {/*
@@ -836,14 +942,15 @@ export function NotchContainer() {
           */}
           <AnimatePresence initial={false}>
             <motion.div
-              key={state}
+              // Each pop-up fades in on its own, even when one follows another.
+              key={state === "alert" && currentAlert ? currentAlert.id : state}
               className="absolute left-1/2 -translate-x-1/2"
               // The view keeps the size of its state even while the capsule
               // is retracted to the lip: the capsule clips it, so the content
               // can never hold the capsule's height open.
               style={{
                 top: BORDER_WIDTH,
-                width: NOTCH_SIZES[state].width - BORDER_WIDTH * 2,
+                width: shape.width - BORDER_WIDTH * 2,
                 height: (isRetracted ? NOTCH_SIZES[state].height : shape.height) - BORDER_WIDTH * 2,
               }}
               initial={{ opacity: 0, y: reducedMotion ? 0 : 4 }}
@@ -869,6 +976,14 @@ export function NotchContainer() {
                 </div>
               </ErrorBoundary>
             </motion.div>
+          </AnimatePresence>
+
+          <AnimatePresence>
+            {bannerAlert && (
+              <ErrorBoundary key={bannerAlert.id} label="Pop-up" fallback={null}>
+                <AlertBanner alert={bannerAlert} />
+              </ErrorBoundary>
+            )}
           </AnimatePresence>
         </motion.div>
       </motion.div>

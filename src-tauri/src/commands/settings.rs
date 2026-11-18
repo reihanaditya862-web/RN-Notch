@@ -166,6 +166,34 @@ impl Default for ActiveWidgets {
     }
 }
 
+/// Optional modules. Switching one off also stops its background work
+/// (listeners and polling loops check this on every round).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Features {
+    /// Pop-ups for notifications from other apps and the browser.
+    pub notifications: bool,
+    /// Pop-ups for Wi-Fi, Bluetooth, displays and the battery.
+    pub hardware_alerts: bool,
+    /// The last ten texts and colour codes copied anywhere.
+    pub clipboard_history: bool,
+    /// Output device switch, microphone mute and per-app volume.
+    pub audio_mixer: bool,
+    /// Race-week schedule, session reminders and the winner card.
+    pub f1_hub: bool,
+}
+
+impl Default for Features {
+    fn default() -> Self {
+        Self {
+            notifications: true,
+            hardware_alerts: true,
+            clipboard_history: true,
+            audio_mixer: true,
+            f1_hub: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct AppSettings {
     pub display_mode: DisplayMode,
@@ -178,6 +206,7 @@ pub struct AppSettings {
     pub glow_end: HexColor,
     pub active_widgets: ActiveWidgets,
     pub dnd_enabled: bool,
+    pub features: Features,
 }
 
 impl Default for AppSettings {
@@ -190,6 +219,7 @@ impl Default for AppSettings {
             glow_end: GLOW_END_DEFAULT,
             active_widgets: ActiveWidgets::default(),
             dnd_enabled: false,
+            features: Features::default(),
         }
     }
 }
@@ -220,6 +250,14 @@ impl AppSettings {
         let widget = |key: &str, fallback: bool| {
             widgets
                 .and_then(|w| w.get(key))
+                .and_then(Value::as_bool)
+                .unwrap_or(fallback)
+        };
+        // Settings from before 1.1 have no modules yet: all of them start on.
+        let features = root.get("features");
+        let feature = |key: &str, fallback: bool| {
+            features
+                .and_then(|f| f.get(key))
                 .and_then(Value::as_bool)
                 .unwrap_or(fallback)
         };
@@ -259,6 +297,16 @@ impl AppSettings {
                 .get("dnd_enabled")
                 .and_then(Value::as_bool)
                 .unwrap_or(defaults.dnd_enabled),
+            features: Features {
+                notifications: feature("notifications", defaults.features.notifications),
+                hardware_alerts: feature("hardware_alerts", defaults.features.hardware_alerts),
+                clipboard_history: feature(
+                    "clipboard_history",
+                    defaults.features.clipboard_history,
+                ),
+                audio_mixer: feature("audio_mixer", defaults.features.audio_mixer),
+                f1_hub: feature("f1_hub", defaults.features.f1_hub),
+            },
         }
         .sanitized()
     }
@@ -486,6 +534,24 @@ mod tests {
     }
 
     #[test]
+    fn modules_default_to_on_and_keep_each_choice() {
+        let old = AppSettings::from_json(r#"{ "display_mode": "notch", "dnd_enabled": true }"#);
+        assert_eq!(old.features, Features::default());
+        assert!(old.dnd_enabled);
+
+        let settings = AppSettings::from_json(
+            r#"{ "features": { "f1_hub": false, "clipboard_history": false, "audio_mixer": "x" } }"#,
+        );
+        assert!(!settings.features.f1_hub);
+        assert!(!settings.features.clipboard_history);
+        assert!(settings.features.audio_mixer, "an invalid value keeps the default");
+        assert!(settings.features.notifications);
+
+        let json = serde_json::to_value(settings).unwrap();
+        assert_eq!(json["features"]["f1_hub"], false);
+    }
+
+    #[test]
     fn missing_fields_fall_back_to_defaults() {
         let settings = AppSettings::from_json(r#"{ "display_mode": "notch" }"#);
         assert_eq!(settings.display_mode, DisplayMode::Notch);
@@ -552,6 +618,10 @@ mod tests {
                 ..Default::default()
             },
             dnd_enabled: true,
+            features: Features {
+                f1_hub: false,
+                ..Default::default()
+            },
         };
         assert_eq!(state.replace(wanted), Ok(wanted));
         assert!(path.exists());

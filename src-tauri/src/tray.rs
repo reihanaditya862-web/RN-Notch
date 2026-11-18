@@ -20,6 +20,7 @@ const ID_SWITCH_MODE: &str = "switch_mode";
 const ID_OPEN_SETTINGS: &str = "open_settings";
 const ID_RESET_POSITION: &str = "reset_position";
 const ID_AUTOSTART: &str = "autostart";
+const ID_F1_HUB: &str = "f1_hub";
 const ID_QUIT: &str = "quit";
 
 /// Emitted with `true` / `false` when the capsule is shown or hidden.
@@ -33,6 +34,7 @@ pub struct TrayMenu {
     visibility: MenuItem<Wry>,
     mode: MenuItem<Wry>,
     autostart: CheckMenuItem<Wry>,
+    f1_hub: CheckMenuItem<Wry>,
 }
 
 fn visibility_label(visible: bool) -> &'static str {
@@ -74,6 +76,14 @@ pub fn setup(app: &AppHandle, settings: &AppSettings) -> tauri::Result<()> {
         autostart::is_enabled(app),
         None::<&str>,
     )?;
+    let f1_hub = CheckMenuItem::with_id(
+        app,
+        ID_F1_HUB,
+        "F1 Race Hub",
+        true,
+        settings.features.f1_hub,
+        None::<&str>,
+    )?;
     let quit = MenuItem::with_id(
         app,
         ID_QUIT,
@@ -91,6 +101,7 @@ pub fn setup(app: &AppHandle, settings: &AppSettings) -> tauri::Result<()> {
             &open_settings,
             &reset,
             &autostart,
+            &f1_hub,
             &PredefinedMenuItem::separator(app)?,
             &quit,
         ],
@@ -111,6 +122,7 @@ pub fn setup(app: &AppHandle, settings: &AppSettings) -> tauri::Result<()> {
         visibility,
         mode,
         autostart,
+        f1_hub,
     });
     Ok(())
 }
@@ -120,6 +132,7 @@ pub fn setup(app: &AppHandle, settings: &AppSettings) -> tauri::Result<()> {
 pub fn sync(app: &AppHandle, settings: &AppSettings) {
     if let Some(menu) = app.try_state::<TrayMenu>() {
         let _ = menu.mode.set_text(mode_label(settings.display_mode));
+        let _ = menu.f1_hub.set_checked(settings.features.f1_hub);
     }
 }
 
@@ -178,6 +191,9 @@ fn on_menu_event(app: &AppHandle, event: MenuEvent) {
                 eprintln!("{error}");
             }
         }
+        ID_F1_HUB => settings::update(app, |settings| {
+            settings.features.f1_hub = !settings.features.f1_hub;
+        }),
         ID_QUIT => app.exit(0),
         _ => {}
     }

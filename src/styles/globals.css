@@ -246,6 +246,27 @@ body {
   animation: notch-breathe 4.5s ease-in-out infinite;
 }
 
+/* F1 launch start: the car shakes on the grid while it revs. */
+@keyframes notch-rev-jitter {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(0.5px, -0.4px);
+  }
+  50% {
+    transform: translate(-0.4px, 0.3px);
+  }
+  75% {
+    transform: translate(0.3px, 0.4px);
+  }
+}
+
+.notch-rev-jitter {
+  animation: notch-rev-jitter 70ms linear infinite;
+}
+
 /* Looping animations stop when the system asks for reduced motion... */
 @media (prefers-reduced-motion: reduce) {
   .notch-pulse,
@@ -253,6 +274,7 @@ body {
   .notch-drop-pulse,
   .notch-wave-bar,
   .notch-ambient-breathing,
+  .notch-rev-jitter,
   .notch-landing {
     animation: none;
   }
@@ -267,8 +289,16 @@ body {
 :root[data-battery-saver] .notch-drop-pulse,
 :root[data-battery-saver] .notch-wave-bar,
 :root[data-battery-saver] .notch-ambient-breathing,
+:root[data-battery-saver] .notch-rev-jitter,
 :root[data-battery-saver] .notch-landing {
   animation: none;
+}
+
+/* Lists inside the dashboard scroll with a thin, quiet bar. */
+.notch-scroll {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 0.15) transparent;
 }
 
 :root[data-battery-saver] .notch-blur {

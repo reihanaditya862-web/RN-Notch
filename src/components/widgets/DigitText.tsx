@@ -20,8 +20,9 @@ const DIGIT = /\d/;
  * an `aria-label` on the parent.
  */
 export function DigitText({ text }: DigitTextProps) {
+  // One unbroken line: a narrow column must never split "09:15" in two.
   return (
-    <>
+    <span className="whitespace-nowrap">
       {text.split("").map((character, index) => {
         if (DIGIT.test(character)) {
           return (
@@ -47,6 +48,6 @@ export function DigitText({ text }: DigitTextProps) {
           </span>
         );
       })}
-    </>
+    </span>
   );
 }

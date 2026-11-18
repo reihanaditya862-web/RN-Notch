@@ -1,22 +1,31 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { type Alert, compareAlerts, isDuplicate } from "../lib/alerts";
 import {
+  ALERT_QUEUE_LIMIT,
+  CLIPBOARD_MAX_ITEMS,
   DEFAULT_SETTINGS,
   GLOW_END_DEFAULT,
   GLOW_START_DEFAULT,
   OPACITY_MAX,
   OPACITY_MIN,
+  POMODORO_BREAK_OPTIONS,
+  POMODORO_FOCUS_OPTIONS,
   SHELF_FILE_TTL_MS,
   SHELF_MAX_FILES,
 } from "../lib/constants";
-import { isHexColor, normalizeHex } from "../lib/color";
+import { colorFromText, isHexColor, normalizeHex } from "../lib/color";
+import type { F1Race, F1Result } from "../lib/f1";
 import { normalizeScale } from "../lib/scale";
 import type {
   ActiveWidgets,
   AppSettings,
+  ClipItem,
+  Features,
   ForegroundState,
   NotchState,
   ScaleOption,
+  ScheduleItem,
   ShelfFile,
   SystemInfo,
 } from "../lib/types";
@@ -31,7 +40,26 @@ interface StateInputs {
   isSettingsOpen: boolean;
   isDragOver: boolean;
   isMediaPlaying: boolean;
+  /** A pop-up waits in the alert queue. */
+  hasAlert: boolean;
   settings: AppSettings;
+}
+
+export type PomodoroPhase = "idle" | "focus" | "break";
+
+export interface PomodoroState {
+  phase: PomodoroPhase;
+  /** When the running phase ends (epoch ms); null while paused or idle. */
+  endsAt: number | null;
+  /** Time left while paused, in ms. */
+  pausedRemaining: number | null;
+  /** Length of the current phase, in ms. */
+  totalMs: number;
+}
+
+/** The latest race winner, with the portrait once it is fetched. */
+export interface F1Winner extends F1Result {
+  photo: string | null;
 }
 
 interface NotchStore extends StateInputs {
@@ -65,6 +93,51 @@ interface NotchStore extends StateInputs {
   /** Persisted to localStorage. */
   shelfFiles: ShelfFile[];
   scratchpadText: string;
+  pomodoroFocusMin: number;
+  pomodoroBreakMin: number;
+
+  /** Pop-ups waiting, most important first; the first one is on screen. */
+  alerts: Alert[];
+  /** The AI shortcuts below the media controls are showing. */
+  isDrawerOpen: boolean;
+  /** The dashboard page shown (see `dashboardPages`). */
+  dashboardPage: string;
+  /** A screenshot or recording is being set up: the capsule steps aside. */
+  isCapturing: boolean;
+  /** A shelf file is being dragged out; our own window must not take it back. */
+  isDraggingOut: boolean;
+  /** Copied texts and colour codes, newest first. Memory only. */
+  clipItems: ClipItem[];
+  pomodoro: PomodoroState;
+  /** The daily schedule, once loaded from Rust. */
+  schedules: ScheduleItem[] | null;
+  f1Schedule: F1Race[] | null;
+  f1Status: "idle" | "loading" | "ready" | "error";
+  f1Winner: F1Winner | null;
+
+  /**
+   * Queues a pop-up. Dropped while the capsule is off screen, and under Do
+   * Not Disturb unless it is a hardware warning or the user's own action.
+   */
+  pushAlert: (alert: Alert) => void;
+  dismissAlert: (id: string) => void;
+  /** Drops every pop-up (the capsule went off screen; they would be stale later). */
+  clearAlerts: () => void;
+  setDrawerOpen: (open: boolean) => void;
+  setDashboardPage: (page: string) => void;
+  setCapturing: (capturing: boolean) => void;
+  setDraggingOut: (dragging: boolean) => void;
+  setFeature: (feature: keyof Features, on: boolean) => void;
+  addClip: (text: string) => void;
+  removeClip: (id: string) => void;
+  clearClips: () => void;
+  startPomodoro: (phase?: Exclude<PomodoroPhase, "idle">) => void;
+  pausePomodoro: () => void;
+  resumePomodoro: () => void;
+  resetPomodoro: () => void;
+  setPomodoroMinutes: (which: "focus" | "break", minutes: number) => void;
+  setSchedules: (items: ScheduleItem[]) => void;
+  setF1: (patch: Partial<Pick<NotchStore, "f1Schedule" | "f1Status" | "f1Winner">>) => void;
 
   /** The cursor has settled on the capsule (after the hover delay). Closing also closes the dashboard. */
   setHoverOpen: (open: boolean) => void;
@@ -113,7 +186,8 @@ interface NotchStore extends StateInputs {
 
 /**
  * Priority: a file drag beats the settings panel, which beats the dashboard,
- * which beats hover, which beats idle.
+ * which beats a pop-up, which beats hover, which beats idle. (Over the
+ * settings panel and the dashboard a pop-up shows as a banner instead.)
  *
  * Do Not Disturb keeps the capsule from changing by itself: it neither widens
  * for music nor opens on hover. A click still opens the dashboard.
@@ -124,6 +198,7 @@ function resolveState(inputs: StateInputs): NotchState {
   if (inputs.isDragOver && widgets.file_shelf) return "dragOver";
   if (inputs.isSettingsOpen) return "settings";
   if (inputs.isExpanded) return "expanded";
+  if (inputs.hasAlert) return "alert";
   if (widgets.media && !isQuiet) {
     if (inputs.isHoverOpen) return "hover";
     if (inputs.isMediaPlaying) return "idleMedia";
@@ -138,6 +213,25 @@ function fileName(path: string): string {
 
 function isFresh(file: ShelfFile, now: number): boolean {
   return now - file.added_at < SHELF_FILE_TTL_MS;
+}
+
+function pickMinutes(value: unknown, options: readonly number[], fallback: number): number {
+  return typeof value === "number" && options.includes(value) ? value : fallback;
+}
+
+/** Whether a pop-up may be shown now (see `pushAlert`). */
+function admitsAlert(alert: Alert, store: NotchStore): boolean {
+  const { foreground, isVisible, settings } = store;
+  if (!isVisible || foreground.is_fullscreen || foreground.is_locked || store.isCapturing) {
+    return false;
+  }
+  if (alert.kind === "notification" && !settings.features.notifications) return false;
+  if (alert.kind === "hardware" && !settings.features.hardware_alerts) return false;
+  if (alert.kind === "f1" && !settings.features.f1_hub) return false;
+  if (settings.dnd_enabled) {
+    return alert.kind === "toast" || (alert.kind === "hardware" && alert.tone === "warning");
+  }
+  return true;
 }
 
 function clampOpacity(opacity: number): number {
@@ -158,6 +252,7 @@ export const useNotchStore = create<NotchStore>()(
           isSettingsOpen: current.isSettingsOpen,
           isDragOver: current.isDragOver,
           isMediaPlaying: current.isMediaPlaying,
+          hasAlert: current.hasAlert,
           settings: current.settings,
           ...patch,
         };
@@ -180,11 +275,12 @@ export const useNotchStore = create<NotchStore>()(
         isSettingsOpen: false,
         isDragOver: false,
         isMediaPlaying: false,
+        hasAlert: false,
         settings: DEFAULT_SETTINGS,
 
         isReady: false,
         isVisible: true,
-        foreground: { is_fullscreen: false, is_window_maximized: false },
+        foreground: { is_fullscreen: false, is_window_maximized: false, is_locked: false },
         uiScale: 1,
 
         systemInfo: null,
@@ -192,9 +288,123 @@ export const useNotchStore = create<NotchStore>()(
 
         shelfFiles: [],
         scratchpadText: "",
+        pomodoroFocusMin: 25,
+        pomodoroBreakMin: 5,
+
+        alerts: [],
+        isDrawerOpen: false,
+        dashboardPage: "media",
+        isCapturing: false,
+        isDraggingOut: false,
+        clipItems: [],
+        pomodoro: { phase: "idle", endsAt: null, pausedRemaining: null, totalMs: 0 },
+        schedules: null,
+        f1Schedule: null,
+        f1Status: "idle",
+        f1Winner: null,
+
+        pushAlert: (alert) => {
+          const store = get();
+          if (!admitsAlert(alert, store)) return;
+          const waiting = store.alerts;
+          if (waiting.some((queued) => isDuplicate(queued, alert))) return;
+
+          // The one on screen stays on screen; the rest are re-ordered, and
+          // past the limit the least important waiting pop-ups are dropped.
+          const [showing, ...rest] = waiting;
+          const queue = [...rest, alert].sort(compareAlerts);
+          const room = ALERT_QUEUE_LIMIT - (showing ? 1 : 0);
+          const alerts = showing ? [showing, ...queue.slice(0, room)] : queue.slice(0, room);
+          set({ alerts });
+          applyInputs({ hasAlert: true });
+        },
+        dismissAlert: (id) => {
+          const alerts = get().alerts.filter((alert) => alert.id !== id);
+          if (alerts.length === get().alerts.length) return;
+          set({ alerts });
+          applyInputs({ hasAlert: alerts.length > 0 });
+        },
+        clearAlerts: () => {
+          if (get().alerts.length === 0) return;
+          set({ alerts: [] });
+          applyInputs({ hasAlert: false });
+        },
+        setDrawerOpen: (open) => {
+          if (open !== get().isDrawerOpen) set({ isDrawerOpen: open });
+        },
+        setDashboardPage: (page) => {
+          if (page !== get().dashboardPage) set({ dashboardPage: page });
+        },
+        setCapturing: (capturing) => {
+          if (capturing !== get().isCapturing) set({ isCapturing: capturing });
+        },
+        setDraggingOut: (dragging) => {
+          if (dragging !== get().isDraggingOut) set({ isDraggingOut: dragging });
+        },
+        setFeature: (feature, on) => {
+          const features = get().settings.features;
+          if (features[feature] !== on) patchSettings({ features: { ...features, [feature]: on } });
+        },
+        addClip: (text) => {
+          const trimmed = text.trim();
+          if (!trimmed) return;
+          // Copying something already in the list moves it to the top.
+          const others = get().clipItems.filter((item) => item.text !== trimmed);
+          const item: ClipItem = {
+            id: crypto.randomUUID(),
+            text: trimmed,
+            color: colorFromText(trimmed),
+            copied_at: Date.now(),
+          };
+          set({ clipItems: [item, ...others].slice(0, CLIPBOARD_MAX_ITEMS) });
+        },
+        removeClip: (id) => set({ clipItems: get().clipItems.filter((item) => item.id !== id) }),
+        clearClips: () => set({ clipItems: [] }),
+        startPomodoro: (phase = "focus") => {
+          const minutes =
+            phase === "focus"
+              ? pickMinutes(get().pomodoroFocusMin, POMODORO_FOCUS_OPTIONS, 25)
+              : pickMinutes(get().pomodoroBreakMin, POMODORO_BREAK_OPTIONS, 5);
+          const totalMs = minutes * 60_000;
+          set({ pomodoro: { phase, endsAt: Date.now() + totalMs, pausedRemaining: null, totalMs } });
+        },
+        pausePomodoro: () => {
+          const { pomodoro } = get();
+          if (pomodoro.phase === "idle" || pomodoro.endsAt === null) return;
+          set({
+            pomodoro: {
+              ...pomodoro,
+              endsAt: null,
+              pausedRemaining: Math.max(0, pomodoro.endsAt - Date.now()),
+            },
+          });
+        },
+        resumePomodoro: () => {
+          const { pomodoro } = get();
+          if (pomodoro.phase === "idle" || pomodoro.pausedRemaining === null) return;
+          set({
+            pomodoro: {
+              ...pomodoro,
+              endsAt: Date.now() + pomodoro.pausedRemaining,
+              pausedRemaining: null,
+            },
+          });
+        },
+        resetPomodoro: () =>
+          set({ pomodoro: { phase: "idle", endsAt: null, pausedRemaining: null, totalMs: 0 } }),
+        setPomodoroMinutes: (which, minutes) => {
+          if (which === "focus") {
+            set({ pomodoroFocusMin: pickMinutes(minutes, POMODORO_FOCUS_OPTIONS, 25) });
+          } else {
+            set({ pomodoroBreakMin: pickMinutes(minutes, POMODORO_BREAK_OPTIONS, 5) });
+          }
+        },
+        setSchedules: (items) => set({ schedules: items }),
+        setF1: (patch) => set(patch),
 
         setHoverOpen: (open) => {
           if (open === get().isHoverOpen) return;
+          if (!open) set({ isDrawerOpen: false });
           applyInputs(open ? { isHoverOpen: true } : { isHoverOpen: false, isExpanded: false });
         },
         setMediaPlaying: (playing) => {
@@ -218,11 +428,13 @@ export const useNotchStore = create<NotchStore>()(
         },
         setForeground: (foreground) => {
           const current = get().foreground;
+          const next = { ...foreground, is_locked: foreground.is_locked ?? false };
           if (
-            current.is_fullscreen !== foreground.is_fullscreen ||
-            current.is_window_maximized !== foreground.is_window_maximized
+            current.is_fullscreen !== next.is_fullscreen ||
+            current.is_window_maximized !== next.is_window_maximized ||
+            current.is_locked !== next.is_locked
           ) {
-            set({ foreground });
+            set({ foreground: next });
           }
         },
         setUiScale: (scale) => {
@@ -240,6 +452,7 @@ export const useNotchStore = create<NotchStore>()(
               scale: normalizeScale(settings.scale, DEFAULT_SETTINGS.scale),
               glow_start: normalizeHex(settings.glow_start, GLOW_START_DEFAULT),
               glow_end: normalizeHex(settings.glow_end, GLOW_END_DEFAULT),
+              features: { ...DEFAULT_SETTINGS.features, ...settings.features },
             },
           }),
         toggleDisplayMode: () =>
@@ -355,6 +568,8 @@ export const useNotchStore = create<NotchStore>()(
       partialize: (store) => ({
         shelfFiles: store.shelfFiles,
         scratchpadText: store.scratchpadText,
+        pomodoroFocusMin: store.pomodoroFocusMin,
+        pomodoroBreakMin: store.pomodoroBreakMin,
       }),
       onRehydrateStorage: () => (store) => store?.pruneExpiredShelfFiles(),
     },

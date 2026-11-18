@@ -1,11 +1,12 @@
 import {
+  AI_DRAWER_HEIGHT,
   ISLAND_TOP_OFFSET,
   LIP_HEIGHT_PX,
   NOTCH_BOTTOM_RADIUS,
   NOTCH_EAR_RADIUS,
   NOTCH_SIZES,
 } from "./constants";
-import type { ActiveWidgets, AppSettings, NotchState } from "./types";
+import type { AppSettings, NotchState } from "./types";
 
 /** Final geometry of the capsule, in px, relative to the window. */
 export interface NotchShape {
@@ -24,38 +25,17 @@ export interface NotchShape {
   earRadius: number;
 }
 
-/** Heights of the dashboard's parts, in px. `ExpandedView` lays out to these. */
+/**
+ * Layout of the dashboard (the `expanded` state). Its pages share one fixed
+ * size; the page content sits above a row of page dots.
+ */
 export const DASHBOARD = {
   padding: 12,
   gap: 8,
   media: 72,
-  /** Clock + collapse row, shown instead of the media player when it is off. */
-  header: 20,
-  rule: 1,
-  system: 70,
-  fileShelf: 50,
-  scratchpad: 28,
-  /** Message shown when every widget is switched off. */
-  empty: 32,
+  /** The page dots at the bottom. */
+  dots: 10,
 } as const;
-
-/** Border of the capsule; the content sits inside it. */
-const BORDER = 1;
-
-/** Height of the dashboard for a set of active widgets. */
-export function getDashboardHeight(widgets: ActiveWidgets): number {
-  const rows: number[] = widgets.media ? [DASHBOARD.media, DASHBOARD.rule] : [DASHBOARD.header];
-  if (widgets.system) rows.push(DASHBOARD.system);
-  if (widgets.file_shelf) rows.push(DASHBOARD.fileShelf);
-  if (widgets.scratchpad) rows.push(DASHBOARD.scratchpad);
-
-  const hasBody = widgets.system || widgets.file_shelf || widgets.scratchpad;
-  if (!widgets.media && !hasBody) rows.push(DASHBOARD.empty);
-
-  const content = rows.reduce((sum, row) => sum + row, 0) + DASHBOARD.gap * (rows.length - 1);
-  // +1 leaves a pixel of slack so a sub-pixel rounding never squeezes a row.
-  return content + (DASHBOARD.padding + BORDER) * 2 + 1;
-}
 
 /** True for the two collapsed states, the ones that sit on screen all day. */
 export function isCollapsedState(state: NotchState): boolean {
@@ -70,6 +50,12 @@ interface ShapeOptions {
   isRetracted?: boolean;
   /** The size factor in effect (1 = 100%); keeps the lip a fixed real height. */
   uiScale?: number;
+  /** The AI drawer below the media controls is open (hover state). */
+  isDrawerOpen?: boolean;
+  /** Size of the pop-up shown in the `alert` state. */
+  alertSize?: { width: number; height: number };
+  /** Height of the dashboard for the page on show (see `dashboardHeight`). */
+  dashboardHeight?: number;
 }
 
 /**
@@ -77,9 +63,9 @@ interface ShapeOptions {
  * place its width, height and position are decided.
  *
  * - Island: floats `ISLAND_TOP_OFFSET` below the top edge. The collapsed
- *   capsule is a full pill (radius = half its height, what `rounded-full`
- *   resolves to); larger states keep their own radius, because a full pill
- *   would cut into their content.
+ *   capsule and the pop-ups are full pills (radius = half their height);
+ *   larger states keep their own radius, because a full pill would cut into
+ *   their content.
  * - Notch: touches the top edge. Instead of square top corners it has ears
  *   that flare out into the edge, so it seems to grow out of the bezel; only
  *   the bottom corners are rounded inwards.
@@ -91,7 +77,13 @@ interface ShapeOptions {
 export function getNotchShape(
   state: NotchState,
   settings: AppSettings,
-  { isRetracted = false, uiScale = 1 }: ShapeOptions = {},
+  {
+    isRetracted = false,
+    uiScale = 1,
+    isDrawerOpen = false,
+    alertSize,
+    dashboardHeight,
+  }: ShapeOptions = {},
 ): NotchShape {
   const base = NOTCH_SIZES[state];
   const isCollapsed = isCollapsedState(state);
@@ -110,14 +102,23 @@ export function getNotchShape(
     };
   }
 
-  const height = state === "expanded" ? getDashboardHeight(settings.active_widgets) : base.height;
+  const isAlert = state === "alert";
+  const width = isAlert && alertSize ? alertSize.width : base.width;
+  const height =
+    isAlert && alertSize
+      ? alertSize.height
+      : state === "hover" && isDrawerOpen
+        ? base.height + AI_DRAWER_HEIGHT
+        : state === "expanded" && dashboardHeight
+          ? dashboardHeight
+          : base.height;
 
   if (settings.display_mode === "notch") {
     // A low capsule cannot carry the full radii: the ear and the bottom
     // corner share one side and may not add up to more than its height.
     const bottomRadius = Math.min(NOTCH_BOTTOM_RADIUS, height / 2 + 2);
     return {
-      width: base.width,
+      width,
       height,
       top: 0,
       topRadius: 0,
@@ -126,9 +127,9 @@ export function getNotchShape(
     };
   }
 
-  const radius = isCollapsed ? height / 2 : base.radius;
+  const radius = isCollapsed || isAlert ? Math.min(height / 2, 30) : base.radius;
   return {
-    width: base.width,
+    width,
     height,
     top: ISLAND_TOP_OFFSET,
     topRadius: radius,

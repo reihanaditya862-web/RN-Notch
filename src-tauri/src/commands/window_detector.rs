@@ -62,6 +62,8 @@ pub struct ForegroundState {
     /// The foreground window's title bar is under the capsule: it is
     /// maximized, or snapped/placed along the top edge beneath the capsule.
     pub is_window_maximized: bool,
+    /// The lock screen is up. Nothing is visible; polling can rest.
+    pub is_locked: bool,
 }
 
 /// Last state seen by the watcher, for the commands below.
@@ -111,6 +113,7 @@ fn classify(
     ForegroundState {
         is_fullscreen,
         is_window_maximized: !is_fullscreen && (is_zoomed || (touches_top && overlaps_capsule)),
+        is_locked: false,
     }
 }
 
@@ -200,8 +203,16 @@ fn watch(app: AppHandle, raw_hwnd: isize) {
     loop {
         thread::sleep(POLL_INTERVAL);
 
-        let Some(next) = read_foreground(own) else {
-            continue;
+        let next = if super::background::is_session_locked() {
+            ForegroundState {
+                is_locked: true,
+                ..Default::default()
+            }
+        } else {
+            let Some(next) = read_foreground(own) else {
+                continue;
+            };
+            next
         };
         let previous = app.state::<ForegroundWatch>().replace(next);
         if next != previous {

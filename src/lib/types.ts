@@ -82,6 +82,17 @@ export interface AppSettings {
   glow_end: string;
   active_widgets: ActiveWidgets;
   dnd_enabled: boolean;
+  /** Optional modules; each one's background work stops when it is off. */
+  features: Features;
+}
+
+/** Keys match the Rust `Features` struct. */
+export interface Features {
+  notifications: boolean;
+  hardware_alerts: boolean;
+  clipboard_history: boolean;
+  audio_mixer: boolean;
+  f1_hub: boolean;
 }
 
 /** Mirrors the Rust `ForegroundState` struct in `src-tauri/src/commands/window_detector.rs`. */
@@ -93,7 +104,83 @@ export interface ForegroundState {
    * or snapped along the top edge beneath it (typically a browser).
    */
   is_window_maximized: boolean;
+  /** The lock screen is up. */
+  is_locked: boolean;
 }
 
-/** Visual states of the capsule implemented so far. */
-export type NotchState = "idle" | "idleMedia" | "hover" | "expanded" | "settings" | "dragOver";
+/**
+ * Visual states of the capsule. `alert` shows the pop-up at the head of the
+ * alert queue (a notification, a hardware change, an F1 card, a toast).
+ */
+export type NotchState =
+  | "idle"
+  | "idleMedia"
+  | "hover"
+  | "expanded"
+  | "settings"
+  | "dragOver"
+  | "alert";
+
+/** Mirrors the Rust `AppNotification` (commands/notifications.rs). */
+export interface AppNotification {
+  id: number;
+  app: string;
+  app_id: string | null;
+  title: string;
+  body: string;
+  icon: string | null;
+}
+
+/** Mirrors the Rust `HardwareAlert` (commands/hardware.rs). */
+export interface HardwareAlert {
+  kind: "wifi" | "bluetooth" | "display" | "battery" | "charging";
+  title: string;
+  detail: string;
+  tone: "info" | "success" | "warning";
+  percent: number | null;
+}
+
+/** Mirrors the Rust `ScheduleItem` (commands/schedules.rs). */
+export interface ScheduleItem {
+  id: string;
+  title: string;
+  /** "HH:MM", 24-hour. */
+  time: string;
+  /** 0 = Sunday ... 6 = Saturday. */
+  days: number[];
+  /** The last day it was ticked off, "YYYY-MM-DD". */
+  done_on: string | null;
+}
+
+/** Mirrors the Rust `OutputDevice` (commands/mixer.rs). */
+export interface OutputDevice {
+  id: string;
+  name: string;
+  is_default: boolean;
+}
+
+/** Mirrors the Rust `AudioApp` (commands/mixer.rs). */
+export interface AudioApp {
+  pid: number;
+  name: string;
+  volume: number;
+  muted: boolean;
+  icon: string | null;
+}
+
+/** Mirrors the Rust `AiShortcut` (commands/apps.rs). */
+export interface AiShortcut {
+  id: "claude" | "chatgpt" | "gemini";
+  name: string;
+  installed: boolean;
+  icon: string | null;
+}
+
+/** A text or colour code copied anywhere in Windows (kept in memory only). */
+export interface ClipItem {
+  id: string;
+  text: string;
+  /** "#RRGGBB" when the text is a colour code. */
+  color: string | null;
+  copied_at: number;
+}

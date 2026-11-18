@@ -4651,7 +4651,7 @@ dependencies = [
 
 [[package]]
 name = "windows-dynamic-island"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "base64 0.23.1",
  "serde",
@@ -4662,6 +4662,7 @@ dependencies = [
  "tauri-plugin-autostart",
  "tauri-plugin-opener",
  "windows 0.62.2",
+ "windows-core 0.62.2",
 ]
 
 [[package]]

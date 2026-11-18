@@ -17,11 +17,16 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetWindowRect};
 
+use commands::background::{self, Background};
 use commands::media::{self, MediaState};
+use commands::notifications::{self, NotificationAccess};
+use commands::schedules::{self, SCHEDULES_FILE, SchedulesState};
 use commands::settings::{self, SETTINGS_DIR, SETTINGS_FILE, SettingsState};
 use commands::system::{self, SystemState};
 use commands::window_detector::{self, ForegroundWatch};
-use commands::{audio, autostart};
+use commands::{
+    apps, audio, autostart, clipboard, hardware, http, mixer, picker, screen_tools,
+};
 
 /// Name shown to the user (tray tooltip, menu texts).
 pub(crate) const APP_NAME: &str = "RN Notch";
@@ -447,6 +452,8 @@ pub fn run() {
         .manage(SystemState::default())
         .manage(ForegroundWatch::default())
         .manage(visibility::Visibility::default())
+        .manage(Background::default())
+        .manage(NotificationAccess::default())
         .invoke_handler(tauri::generate_handler![
             set_clickthrough,
             set_hit_regions,
@@ -470,7 +477,30 @@ pub fn run() {
             system::get_system_info,
             audio::get_volume,
             audio::set_volume,
-            audio::toggle_mute
+            audio::toggle_mute,
+            background::set_background_paused,
+            notifications::notification_access,
+            notifications::open_app,
+            notifications::open_notification_settings,
+            clipboard::write_clipboard_text,
+            picker::start_color_pick,
+            picker::pixel_at_cursor,
+            picker::finish_color_pick,
+            screen_tools::launch_snip,
+            screen_tools::start_file_drag,
+            apps::ai_shortcuts,
+            apps::launch_ai,
+            http::http_get_text,
+            http::http_get_image,
+            schedules::load_schedules,
+            schedules::save_schedules,
+            mixer::audio_outputs,
+            mixer::set_audio_output,
+            mixer::mic_muted,
+            mixer::toggle_mic,
+            mixer::audio_apps,
+            mixer::set_app_volume,
+            mixer::set_app_muted
         ])
         .setup(|app| {
             let window = app
@@ -479,14 +509,25 @@ pub fn run() {
 
             // Settings live at %APPDATA%\rn-notch\settings.json and must be
             // in place before the frontend asks for them.
-            let settings_path = app
-                .path()
-                .config_dir()?
-                .join(SETTINGS_DIR)
-                .join(SETTINGS_FILE);
-            let settings_state = SettingsState::load(settings_path);
+            let data_dir = app.path().config_dir()?.join(SETTINGS_DIR);
+            let settings_state = SettingsState::load(data_dir.join(SETTINGS_FILE));
             let initial_settings = settings_state.get();
             app.manage(settings_state);
+            app.manage(SchedulesState::load(data_dir.join(SCHEDULES_FILE)));
+
+            // The optional modules. Each loop checks its switch in the
+            // settings on every round, and eases off while the capsule is
+            // off screen or the session is locked. None of them is needed
+            // for the capsule itself, so a failure to start is only logged.
+            for (name, started) in [
+                ("notifications", notifications::spawn_watcher(app.handle().clone())),
+                ("hardware", hardware::spawn_watcher(app.handle().clone())),
+                ("clipboard", clipboard::spawn_watcher(app.handle().clone())),
+            ] {
+                if let Err(error) = started {
+                    eprintln!("could not start the {name} watcher: {error}");
+                }
+            }
 
             // The app is usable without a tray icon, so a failure is not fatal.
             if let Err(error) = tray::setup(app.handle(), &initial_settings) {

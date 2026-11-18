@@ -1,7 +1,12 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import {
+  Bell,
   Blend,
+  ClipboardList,
   Cpu,
+  ExternalLink,
+  Flag,
   Moon,
   Music,
   Palette,
@@ -10,6 +15,8 @@ import {
   Power,
   RotateCcw,
   Scaling,
+  SlidersHorizontal,
+  Wifi,
   X,
 } from "lucide-react";
 import { useAutostart } from "../hooks/useAutostart";
@@ -21,7 +28,7 @@ import {
   OPACITY_MIN,
   SCALE_OPTIONS,
 } from "../lib/constants";
-import type { ActiveWidgets, DisplayMode } from "../lib/types";
+import type { ActiveWidgets, DisplayMode, Features } from "../lib/types";
 import { useNotchStore } from "../stores/notchStore";
 import { DigitText } from "./widgets/DigitText";
 
@@ -112,12 +119,6 @@ function ToggleRow({ icon, label, isOn, onChange, tone = "default" }: ToggleRowP
   );
 }
 
-const WIDGETS: Array<{ key: keyof ActiveWidgets; label: string; icon: ReactNode }> = [
-  { key: "media", label: "Media player", icon: <Music size={14} strokeWidth={1.5} /> },
-  { key: "system", label: "System monitor", icon: <Cpu size={14} strokeWidth={1.5} /> },
-  { key: "file_shelf", label: "File shelf", icon: <Paperclip size={14} strokeWidth={1.5} /> },
-  { key: "scratchpad", label: "Quick note", icon: <PenLine size={14} strokeWidth={1.5} /> },
-];
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -269,24 +270,97 @@ function GlowColors() {
   );
 }
 
-/**
- * Settings panel, shown inside the capsule (420x380): display mode, size,
- * opacity, glow colours, which widgets are on, Do Not Disturb and Start with
- * Windows.
- *
- * Every control changes the store at once, so the capsule previews it live;
- * `useSettingsSync` writes the result to `%APPDATA%\rn-notch\settings.json`.
- * "Start with Windows" is the exception: it is Windows' own startup entry,
- * switched through `useAutostart`.
- */
-export function SettingsModal({ onClose }: SettingsModalProps) {
+
+const WIDGETS: Array<{ key: keyof ActiveWidgets; label: string; icon: ReactNode }> = [
+  { key: "media", label: "Media player", icon: <Music size={14} strokeWidth={1.5} /> },
+  { key: "system", label: "System monitor", icon: <Cpu size={14} strokeWidth={1.5} /> },
+  { key: "file_shelf", label: "File shelf", icon: <Paperclip size={14} strokeWidth={1.5} /> },
+  { key: "scratchpad", label: "Quick note", icon: <PenLine size={14} strokeWidth={1.5} /> },
+];
+
+const FEATURES: Array<{ key: keyof Features; label: string; icon: ReactNode }> = [
+  { key: "notifications", label: "Notifications", icon: <Bell size={14} strokeWidth={1.5} /> },
+  { key: "hardware_alerts", label: "Hardware pop-ups", icon: <Wifi size={14} strokeWidth={1.5} /> },
+  {
+    key: "clipboard_history",
+    label: "Clipboard history",
+    icon: <ClipboardList size={14} strokeWidth={1.5} />,
+  },
+  { key: "audio_mixer", label: "Audio mixer", icon: <SlidersHorizontal size={14} strokeWidth={1.5} /> },
+  { key: "f1_hub", label: "F1 Race Hub", icon: <Flag size={14} strokeWidth={1.5} /> },
+];
+
+type NotificationAccess = "allowed" | "denied" | "unspecified" | "unavailable";
+
+/** Asks Rust whether Windows lets the app read notifications. */
+function useNotificationAccess(enabled: boolean): NotificationAccess | null {
+  const [access, setAccess] = useState<NotificationAccess | null>(null);
+  useEffect(() => {
+    if (!enabled || !isTauri()) return;
+    let disposed = false;
+    const check = () =>
+      invoke<NotificationAccess>("notification_access")
+        .then((status) => {
+          if (!disposed) setAccess(status);
+        })
+        .catch(() => {
+          if (!disposed) setAccess("unavailable");
+        });
+    void check();
+    // The user may be flipping the switch in Windows Settings right now.
+    const timer = window.setInterval(() => void check(), 3000);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [enabled]);
+  return access;
+}
+
+/** Notification access from Windows, with a way to fix it when it is missing. */
+function NotificationAccessRow() {
+  const enabled = useNotchStore((store) => store.settings.features.notifications);
+  const access = useNotificationAccess(enabled);
+  if (!enabled || access === null || access === "allowed") return null;
+
+  const message =
+    access === "unavailable"
+      ? "This Windows does not share notifications"
+      : "Notification access is off in Windows";
+
+  return (
+    <div className="flex h-8 shrink-0 items-center gap-2 rounded-lg border border-notch-border-hover px-2.5">
+      <Bell size={13} strokeWidth={1.5} aria-hidden="true" className="shrink-0 text-notch-charging" />
+      <span className="min-w-0 flex-1 truncate text-[11px] leading-4 text-notch-secondary">{message}</span>
+      {access !== "unavailable" && (
+        <button
+          type="button"
+          onClick={() =>
+            void invoke("open_notification_settings").catch((error: unknown) =>
+              console.warn("[Settings] open_notification_settings failed:", error),
+            )
+          }
+          className={[
+            "flex h-6 shrink-0 items-center gap-1 rounded-md bg-notch-surface px-2 text-[11px] leading-none font-medium",
+            "text-notch-primary transition-colors duration-100 hover:bg-notch-surface-hover",
+            FOCUS_RING,
+          ].join(" ")}
+        >
+          Open Windows settings
+          <ExternalLink size={11} strokeWidth={1.75} aria-hidden="true" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+type Tab = "general" | "modules";
+
+function GeneralTab() {
   const settings = useNotchStore((store) => store.settings);
   const setDisplayMode = useNotchStore((store) => store.setDisplayMode);
   const setOpacity = useNotchStore((store) => store.setOpacity);
   const setScale = useNotchStore((store) => store.setScale);
-  const setWidgetActive = useNotchStore((store) => store.setWidgetActive);
-  const toggleDnd = useNotchStore((store) => store.toggleDnd);
-  const autostart = useAutostart();
 
   const opacityPercent = Math.round(settings.opacity * 100);
   const opacityMin = Math.round(OPACITY_MIN * 100);
@@ -294,28 +368,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   const opacityFill = ((opacityPercent - opacityMin) / (opacityMax - opacityMin)) * 100;
 
   return (
-    <div
-      role="dialog"
-      aria-label="Settings"
-      className="flex h-full w-full flex-col gap-2 p-3 *:shrink-0"
-    >
-      <header className="flex h-6 items-center justify-between">
-        <h2 className="text-[13px] leading-[18px] font-medium text-notch-primary">Settings</h2>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close settings"
-          title="Close (Esc)"
-          className={[
-            "flex h-5 w-5 items-center justify-center rounded-md text-notch-secondary",
-            "transition-[color,scale] duration-100 hover:scale-110 hover:text-notch-primary active:scale-95",
-            FOCUS_RING,
-          ].join(" ")}
-        >
-          <X size={16} strokeWidth={1.5} aria-hidden="true" />
-        </button>
-      </header>
-
+    <>
       <div role="radiogroup" aria-label="Display mode" className="grid h-14 grid-cols-2 gap-1.5">
         <ModeOption
           mode="island"
@@ -332,12 +385,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       </div>
 
       <div className="flex h-7 items-center gap-2">
-        <Scaling
-          size={14}
-          strokeWidth={1.5}
-          aria-hidden="true"
-          className="mx-1 shrink-0 text-notch-tertiary"
-        />
+        <Scaling size={14} strokeWidth={1.5} aria-hidden="true" className="mx-1 shrink-0 text-notch-tertiary" />
         <span className="w-14 shrink-0 text-[12px] leading-4 text-notch-primary">Size</span>
         <div
           role="radiogroup"
@@ -369,12 +417,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       </div>
 
       <label className="flex h-[22px] items-center gap-2">
-        <Blend
-          size={14}
-          strokeWidth={1.5}
-          aria-hidden="true"
-          className="mx-1 shrink-0 text-notch-tertiary"
-        />
+        <Blend size={14} strokeWidth={1.5} aria-hidden="true" className="mx-1 shrink-0 text-notch-tertiary" />
         <span className="w-14 shrink-0 text-[12px] leading-4 text-notch-primary">Opacity</span>
         <input
           type="range"
@@ -396,7 +439,19 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       </label>
 
       <GlowColors />
+    </>
+  );
+}
 
+function ModulesTab() {
+  const settings = useNotchStore((store) => store.settings);
+  const setWidgetActive = useNotchStore((store) => store.setWidgetActive);
+  const setFeature = useNotchStore((store) => store.setFeature);
+  const toggleDnd = useNotchStore((store) => store.toggleDnd);
+  const autostart = useAutostart();
+
+  return (
+    <>
       <div role="group" aria-label="Widgets" className="grid grid-cols-2 gap-1.5">
         {WIDGETS.map(({ key, label, icon }) => (
           <ToggleRow
@@ -407,9 +462,15 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
             onChange={(isOn) => setWidgetActive(key, isOn)}
           />
         ))}
-      </div>
-
-      <div className="grid grid-cols-2 gap-1.5">
+        {FEATURES.map(({ key, label, icon }) => (
+          <ToggleRow
+            key={key}
+            icon={icon}
+            label={label}
+            isOn={settings.features[key]}
+            onChange={(isOn) => setFeature(key, isOn)}
+          />
+        ))}
         <ToggleRow
           icon={<Moon size={14} strokeWidth={1.5} />}
           label="Do Not Disturb"
@@ -424,7 +485,66 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           onChange={autostart.setEnabled}
         />
       </div>
+      <NotificationAccessRow />
+    </>
+  );
+}
 
+/**
+ * Settings panel, shown inside the capsule (420x380), in two tabs:
+ * - General: display mode, size, opacity and the glow colours.
+ * - Modules: which widgets and modules are on, Do Not Disturb and Start
+ *   with Windows. A module switched off also stops its background work.
+ *
+ * Every control changes the store at once, so the capsule previews it live;
+ * `useSettingsSync` writes the result to `%APPDATA%\rn-notch\settings.json`.
+ * "Start with Windows" is the exception: it is Windows' own startup entry,
+ * switched through `useAutostart`.
+ */
+export function SettingsModal({ onClose }: SettingsModalProps) {
+  const [tab, setTab] = useState<Tab>("general");
+
+  return (
+    <div role="dialog" aria-label="Settings" className="flex h-full w-full flex-col gap-2 p-3 *:shrink-0">
+      <header className="flex h-6 items-center gap-2">
+        <h2 className="text-[13px] leading-[18px] font-medium text-notch-primary">Settings</h2>
+        <div role="tablist" aria-label="Settings sections" className="ml-1 flex h-6 gap-0.5 rounded-lg bg-notch-surface p-0.5">
+          {(["general", "modules"] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={tab === value}
+              onClick={() => setTab(value)}
+              className={[
+                "rounded-md px-2.5 text-[11px] leading-none font-medium transition-colors duration-100",
+                FOCUS_RING,
+                tab === value ? "bg-notch-surface-hover text-notch-primary" : "text-notch-secondary hover:text-notch-primary",
+              ].join(" ")}
+            >
+              {value === "general" ? "General" : "Modules"}
+            </button>
+          ))}
+        </div>
+        <span className="flex-1" />
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close settings"
+          title="Close (Esc)"
+          className={[
+            "flex h-5 w-5 items-center justify-center rounded-md text-notch-secondary",
+            "transition-[color,scale] duration-100 hover:scale-110 hover:text-notch-primary active:scale-95",
+            FOCUS_RING,
+          ].join(" ")}
+        >
+          <X size={16} strokeWidth={1.5} aria-hidden="true" />
+        </button>
+      </header>
+
+      {tab === "general" ? <GeneralTab /> : <ModulesTab />}
+
+      <span className="flex-1" />
       <p className="truncate font-mono text-[10px] leading-3 tracking-[-0.02em] text-notch-tertiary">
         Saved to %APPDATA%\rn-notch\settings.json
       </p>

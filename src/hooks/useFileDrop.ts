@@ -30,8 +30,9 @@ export function useFileDrop(onDrop: (added: number) => void): void {
         const store = useNotchStore.getState();
         const payload = event.payload;
 
-        // With the file shelf switched off the capsule is not a drop target.
-        if (!store.settings.active_widgets.file_shelf) {
+        // With the file shelf switched off the capsule is not a drop target,
+        // and a file being dragged out of the shelf is not coming back in.
+        if (!store.settings.active_widgets.file_shelf || store.isDraggingOut) {
           store.setDragOver(false);
           return;
         }
