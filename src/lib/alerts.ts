@@ -40,6 +40,8 @@ export interface F1WinnerCard {
   driver: string;
   grandPrix: string;
   team: string;
+  /** The team logo as a `data:` URL; null shows only the team colour. */
+  teamLogo: string | null;
   teamColor: string;
   /** Portrait as a `data:` URL; null shows the driver's initials. */
   photo: string | null;

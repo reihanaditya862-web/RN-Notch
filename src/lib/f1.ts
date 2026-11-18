@@ -40,6 +40,8 @@ export interface F1Result {
   /** Wikipedia article of the driver, for the portrait. */
   driverWiki: string | null;
   team: string;
+  /** Wikipedia article of the team, for its logo. */
+  teamWiki: string | null;
   teamId: string;
 }
 
@@ -143,6 +145,7 @@ export function parseWinner(json: unknown): F1Result | null {
     driverNumber: text(driver.permanentNumber) || null,
     driverWiki: wikiTitle(text(driver.url)),
     team: text(first.Constructor.name),
+    teamWiki: wikiTitle(text(first.Constructor.url)),
     teamId: text(first.Constructor.constructorId),
   };
 }

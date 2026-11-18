@@ -22,6 +22,7 @@ import type { Alert, AlertIcon, AlertSymbol } from "../lib/alerts";
 import { initials } from "../lib/f1";
 import { useNotchStore } from "../stores/notchStore";
 import { F1LaunchAnimation } from "./widgets/F1LaunchAnimation";
+import { TeamLogo } from "./widgets/TeamLogo";
 
 const SYMBOLS: Record<AlertSymbol, LucideIcon> = {
   wifi: Wifi,
@@ -188,6 +189,7 @@ function WinnerAlert({ alert }: { alert: Alert }) {
           {winner.grandPrix} · {winner.team}
         </span>
       </span>
+      {winner.teamLogo && <TeamLogo src={winner.teamLogo} team={winner.team} />}
       <DismissButton alert={alert} />
     </div>
   );

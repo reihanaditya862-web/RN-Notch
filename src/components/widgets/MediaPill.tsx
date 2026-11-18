@@ -73,6 +73,8 @@ interface ControlButtonProps {
   pressed?: boolean;
   /** Narrower button for the secondary controls. */
   compact?: boolean;
+  /** Shown faded: the app does not offer it (a click explains why). */
+  muted?: boolean;
   children: ReactNode;
 }
 
@@ -83,6 +85,7 @@ function ControlButton({
   emphasized,
   pressed,
   compact,
+  muted,
   children,
 }: ControlButtonProps) {
   return (
@@ -101,6 +104,7 @@ function ControlButton({
         "outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-notch-focus",
         "disabled:pointer-events-none disabled:opacity-35",
         emphasized ? "text-notch-primary" : "text-notch-secondary hover:text-notch-primary",
+        muted ? "opacity-40 hover:opacity-70" : "",
       ].join(" ")}
     >
       {children}
@@ -191,7 +195,7 @@ function SeekBar({ media, pollIntervalMs, onSeek }: SeekBarProps) {
         onSeek(media.position_ms + step);
       }}
       className={[
-        "group relative -my-1.5 flex h-[15px] w-full touch-none items-center rounded-full",
+        "group relative -my-1.5 flex h-[15px] min-w-0 flex-1 touch-none items-center rounded-full",
         "outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-notch-focus",
         canSeek ? "cursor-pointer" : "",
       ].join(" ")}
@@ -261,9 +265,6 @@ export function MediaPill({
   const timeline = hasTimeline
     ? `${formatDuration(media.position_ms)} / ${formatDuration(media.duration_ms)}`
     : "";
-  // "1:03:59 / 1:25:27" does not fit beside five buttons; long tracks show the position only.
-  const shownTime =
-    hasTimeline && media.duration_ms >= 3_600_000 ? formatDuration(media.position_ms) : timeline;
 
   return (
     <div className={`flex h-full w-full flex-col justify-between ${className}`}>
@@ -308,24 +309,38 @@ export function MediaPill({
         )}
       </div>
 
-      <SeekBar media={media} pollIntervalMs={pollIntervalMs} onSeek={onSeek} />
+      {/* Position, seek bar, length: the times live with the bar, so the
+          control row keeps its room however long the track is. */}
+      <div className="flex items-center gap-2">
+        {hasTimeline && (
+          <span
+            aria-label={`Playback position ${timeline}`}
+            className="shrink-0 font-display text-[9px] leading-none font-bold text-notch-tertiary"
+          >
+            <DigitText text={formatDuration(media.position_ms)} />
+          </span>
+        )}
+        <SeekBar media={media} pollIntervalMs={pollIntervalMs} onSeek={onSeek} />
+        {hasTimeline && (
+          <span aria-hidden="true" className="shrink-0 font-display text-[9px] leading-none font-bold text-notch-tertiary">
+            <DigitText text={formatDuration(media.duration_ms)} />
+          </span>
+        )}
+      </div>
 
-      {/* Time, transport controls, trailing widgets */}
-      <div className="grid grid-cols-[auto_1fr_auto] items-center gap-1.5">
-        <span
-          aria-label={hasTimeline ? `Playback position ${timeline}` : undefined}
-          title={shownTime !== timeline ? timeline : undefined}
-          className="font-display text-[10px] leading-none font-bold whitespace-nowrap text-notch-tertiary"
-        >
-          {hasTimeline && <DigitText text={shownTime} />}
-        </span>
-
-        <div className="flex items-center justify-center gap-1">
+      {/* Transport controls on the left, trailing widgets on the right */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1">
           <ControlButton
-            label={shuffle === null ? "Shuffle (not offered by this app)" : `Shuffle: ${shuffle ? "on" : "off"}`}
+            label={
+              shuffle === null
+                ? `Shuffle (${media?.source ?? "this app"} keeps it to itself)`
+                : `Shuffle: ${shuffle ? "on" : "off"}`
+            }
             onClick={onToggleShuffle}
-            disabled={shuffle === null}
+            disabled={!hasMedia}
             pressed={shuffle === true}
+            muted={shuffle === null}
             compact
           >
             <Shuffle size={13} strokeWidth={1.75} aria-hidden="true" />
@@ -349,9 +364,17 @@ export function MediaPill({
             <SkipForward size={16} strokeWidth={1.5} fill="currentColor" aria-hidden="true" />
           </ControlButton>
           <ControlButton
-            label={repeat === null ? "Repeat (not offered by this app)" : REPEAT_LABELS[repeat]}
+            label={
+              repeat === null
+                ? "Repeat"
+                : media?.repeat_local
+                  ? repeat === "track"
+                    ? "Repeat one (looped by RN Notch)"
+                    : "Repeat: off (RN Notch can loop this track)"
+                  : REPEAT_LABELS[repeat]
+            }
             onClick={onCycleRepeat}
-            disabled={repeat === null}
+            disabled={!hasMedia}
             pressed={repeat !== null && repeat !== "none"}
             compact
           >
@@ -363,7 +386,7 @@ export function MediaPill({
           </ControlButton>
         </div>
 
-        <div className="flex items-center justify-end gap-2">{trailing}</div>
+        <div className="flex min-w-0 items-center justify-end gap-2">{trailing}</div>
       </div>
     </div>
   );

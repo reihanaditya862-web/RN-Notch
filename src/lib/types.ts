@@ -18,6 +18,11 @@ export interface MediaInfo {
   shuffle: boolean | null;
   /** Repeat mode; null when the app does not offer repeat. */
   repeat: RepeatMode | null;
+  /**
+   * Frontend only: the app has no repeat of its own and `repeat` is RN
+   * Notch's loop ("track" or "none").
+   */
+  repeat_local?: boolean;
 }
 
 export type RepeatMode = "none" | "track" | "list";

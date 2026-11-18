@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { toastAlert } from "../lib/alerts";
 import type { MediaInfo, RepeatMode } from "../lib/types";
+import { useNotchStore } from "../stores/notchStore";
 
 interface MediaSession {
   /** The active media session, or null when nothing is available. */
@@ -26,6 +28,9 @@ const OPTIMISTIC_SLOW_HOLD_MS = 1500;
 
 /** A reported position this close to where the seek should be counts as confirmed. */
 const SEEK_TOLERANCE_MS = 1500;
+
+/** RN Notch's own repeat jumps back this long before the track would end. */
+const LOOP_LEAD_MS = 700;
 
 const NEXT_REPEAT: Record<RepeatMode, RepeatMode> = { none: "list", list: "track", track: "none" };
 
@@ -254,16 +259,75 @@ export function useMediaSession(pollIntervalMs: number | null): MediaSession {
   );
 
   const toggleShuffle = useCallback(() => {
-    const shuffle = mediaRef.current?.shuffle;
-    if (shuffle === null || shuffle === undefined) return;
-    changeMode({ shuffle: !shuffle });
+    const current = mediaRef.current;
+    if (!current) return;
+    if (current.shuffle === null) {
+      // The app keeps shuffle to itself (browsers do); say so instead of
+      // a button that silently does nothing.
+      useNotchStore
+        .getState()
+        .pushAlert(
+          toastAlert(
+            `${current.source} has no shuffle for other apps`,
+            "Turn shuffle on in the player itself",
+            { type: "symbol", name: "error" },
+            "warning",
+          ),
+        );
+      return;
+    }
+    changeMode({ shuffle: !current.shuffle });
   }, [changeMode]);
+
+  // Repeat for apps that do not offer it (a browser): RN Notch loops the
+  // track itself by jumping back to the start just before it ends.
+  const [localRepeat, setLocalRepeat] = useState(false);
+  const source = media?.source ?? null;
+  useEffect(() => setLocalRepeat(false), [source]);
 
   const cycleRepeat = useCallback(() => {
-    const repeat = mediaRef.current?.repeat;
-    if (!repeat) return;
-    changeMode({ repeat: NEXT_REPEAT[repeat] });
+    const current = mediaRef.current;
+    if (!current) return;
+    if (current.repeat !== null) {
+      changeMode({ repeat: NEXT_REPEAT[current.repeat] });
+    } else if (current.can_seek && current.duration_ms > 0) {
+      setLocalRepeat((on) => !on);
+    } else {
+      useNotchStore
+        .getState()
+        .pushAlert(
+          toastAlert(
+            `${current.source} cannot be repeated from here`,
+            "It does not let other apps move its playback",
+            { type: "symbol", name: "error" },
+            "warning",
+          ),
+        );
+    }
   }, [changeMode]);
 
-  return { media, playPause, next, previous, seek, toggleShuffle, cycleRepeat };
+  const canLoop =
+    localRepeat &&
+    media !== null &&
+    media.repeat === null &&
+    media.is_playing &&
+    media.can_seek &&
+    media.duration_ms > 0;
+  const loopIn = canLoop ? media.duration_ms - media.position_ms - LOOP_LEAD_MS : null;
+  useEffect(() => {
+    if (loopIn === null) return;
+    const timer = window.setTimeout(() => seek(0), Math.max(0, loopIn));
+    return () => window.clearTimeout(timer);
+  }, [loopIn, seek]);
+
+  // What the buttons show: the app's own modes, or RN Notch's loop.
+  const shownMedia = useMemo(
+    () =>
+      media && media.repeat === null && media.can_seek && media.duration_ms > 0
+        ? { ...media, repeat: localRepeat ? ("track" as const) : ("none" as const), repeat_local: true }
+        : media,
+    [media, localRepeat],
+  );
+
+  return { media: shownMedia, playPause, next, previous, seek, toggleShuffle, cycleRepeat };
 }

@@ -60,6 +60,7 @@ export interface PomodoroState {
 /** The latest race winner, with the portrait once it is fetched. */
 export interface F1Winner extends F1Result {
   photo: string | null;
+  teamLogo: string | null;
 }
 
 interface NotchStore extends StateInputs {

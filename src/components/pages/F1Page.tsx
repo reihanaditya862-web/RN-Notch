@@ -12,6 +12,7 @@ import {
 import { useNotchStore } from "../../stores/notchStore";
 import { DigitText } from "../widgets/DigitText";
 import { F1LaunchAnimation } from "../widgets/F1LaunchAnimation";
+import { TeamLogo } from "../widgets/TeamLogo";
 import { PageHeader, SectionLabel } from "./PageHeader";
 
 /** The launch animation plays once a day, the first time the page opens in race week. */
@@ -40,14 +41,25 @@ function useLaunchOnce(raceWeek: boolean): boolean {
     let seen: string | null = null;
     try {
       seen = localStorage.getItem(ANIMATION_DAY_KEY);
-      localStorage.setItem(ANIMATION_DAY_KEY, todayKey());
     } catch {
       // Without storage it simply plays each time.
     }
     if (seen === todayKey()) return;
     setIsPlaying(true);
-    const timer = window.setTimeout(() => setIsPlaying(false), ANIMATION_MS);
-    return () => window.clearTimeout(timer);
+    // Counted as seen only once it has played to the end; leaving the page
+    // halfway lets it play again next time.
+    const timer = window.setTimeout(() => {
+      try {
+        localStorage.setItem(ANIMATION_DAY_KEY, todayKey());
+      } catch {
+        // See above.
+      }
+      setIsPlaying(false);
+    }, ANIMATION_MS);
+    return () => {
+      window.clearTimeout(timer);
+      setIsPlaying(false);
+    };
   }, [raceWeek]);
   return isPlaying;
 }
@@ -162,7 +174,11 @@ export function F1Page({ onCollapse }: { onCollapse: () => void }) {
               <span className="font-normal text-notch-secondary"> · {winner.team}</span>
             </span>
           </span>
-          <span className="h-5 w-1 shrink-0 rounded-full" style={{ backgroundColor: teamColor(winner.teamId) }} aria-hidden="true" />
+          {winner.teamLogo ? (
+            <TeamLogo src={winner.teamLogo} team={winner.team} small />
+          ) : (
+            <span className="h-5 w-1 shrink-0 rounded-full" style={{ backgroundColor: teamColor(winner.teamId) }} aria-hidden="true" />
+          )}
         </div>
       )}
     </div>

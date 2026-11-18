@@ -21,10 +21,11 @@ use super::background::ensure_com;
 const USER_AGENT: &str = "RN-Notch/1.1 (Windows desktop widget)";
 
 /// Hosts that may be fetched, with the path every URL must start with.
-const ALLOWED: [(&str, &str); 5] = [
+const ALLOWED: [(&str, &str); 6] = [
     ("api.jolpi.ca", "/ergast/f1/"),
     ("en.wikipedia.org", "/api/rest_v1/page/summary/"),
     ("upload.wikimedia.org", "/"),
+    ("thumb.wikimedia.org", "/"),
     ("www.google.com", "/s2/favicons"),
     ("t0.gstatic.com", "/faviconV2"),
 ];
@@ -131,6 +132,7 @@ mod tests {
         assert!(is_allowed("api.jolpi.ca", "/ergast/f1/current.json"));
         assert!(is_allowed("en.wikipedia.org", "/api/rest_v1/page/summary/Max_Verstappen"));
         assert!(is_allowed("upload.wikimedia.org", "/wikipedia/commons/a/b.jpg"));
+        assert!(is_allowed("thumb.wikimedia.org", "/wikipedia/commons/thumb/a/b.jpg/330px-b.jpg"));
         assert!(is_allowed("www.google.com", "/s2/favicons"));
 
         assert!(!is_allowed("api.jolpi.ca", "/admin"));

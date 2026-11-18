@@ -49,8 +49,15 @@ async function fetchJson(url: string): Promise<unknown> {
   return JSON.parse(await invoke<string>("http_get_text", { url }));
 }
 
-/** The driver's portrait from Wikipedia, or null. */
-async function fetchPortrait(wikiTitle: string): Promise<string | null> {
+/** Where Wikipedia serves its images from. */
+const WIKIMEDIA_IMAGE = /^https:\/\/(upload|thumb)\.wikimedia\.org\//;
+
+/**
+ * The lead image of a Wikipedia article, or null: a driver's article leads
+ * with their portrait, a team's article with the team logo.
+ */
+async function fetchWikiImage(wikiTitle: string | null | undefined): Promise<string | null> {
+  if (!wikiTitle) return null;
   try {
     const summary = await fetchJson(
       `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(wikiTitle)}`,
@@ -60,9 +67,7 @@ async function fetchPortrait(wikiTitle: string): Promise<string | null> {
         ? (summary.thumbnail as { source?: unknown } | null)
         : null;
     const source = thumbnail?.source;
-    if (typeof source !== "string" || !source.startsWith("https://upload.wikimedia.org/")) {
-      return null;
-    }
+    if (typeof source !== "string" || !WIKIMEDIA_IMAGE.test(source)) return null;
     return await invoke<string>("http_get_image", { url: source });
   } catch {
     return null;
@@ -133,25 +138,31 @@ export function useF1Hub(enabled: boolean): void {
 
     const keepWinner = async (result: F1Result): Promise<F1Winner> => {
       const known = useNotchStore.getState().f1Winner;
-      const photo =
-        known && raceKey(known) === raceKey(result) && known.photo
-          ? known.photo
-          : result.driverWiki
-            ? await fetchPortrait(result.driverWiki)
-            : null;
-      const winner = { ...result, photo };
+      const sameRace = known !== null && raceKey(known) === raceKey(result);
+      const [photo, teamLogo] = await Promise.all([
+        sameRace && known.photo ? known.photo : fetchWikiImage(result.driverWiki),
+        sameRace && known.teamLogo ? known.teamLogo : fetchWikiImage(result.teamWiki),
+      ]);
+      const winner = { ...result, photo, teamLogo };
       writeJson(WINNER_KEY, winner);
       if (!disposed) setF1({ f1Winner: winner });
       return winner;
     };
+
+    // Pictures that failed to load (offline, or saved by an older version)
+    // are tried once more per run.
+    let picturesRetried = false;
 
     const checkResults = async (races: F1Race[], now: number) => {
       const awaiting = raceAwaitingWinner(races, now);
       const known = useNotchStore.getState().f1Winner;
       const wantsAnnouncement =
         awaiting !== null && localStorage.getItem(ANNOUNCED_KEY) !== raceKey(awaiting);
-      // Also fill in the page's "last winner" when nothing is known yet.
-      const wantsLatest = known === null;
+      // Also fill in the page's "last winner" when nothing is known yet, or
+      // when its portrait or team logo is missing.
+      const missingPictures = known !== null && (!known.photo || !known.teamLogo) && !picturesRetried;
+      if (missingPictures) picturesRetried = true;
+      const wantsLatest = known === null || missingPictures;
       if ((!wantsAnnouncement && !wantsLatest) || now - lastResultAttempt < RESULT_RETRY_MS) return;
       lastResultAttempt = now;
 
@@ -171,6 +182,7 @@ export function useF1Hub(enabled: boolean): void {
               grandPrix: winner.raceName,
               team: winner.team,
               teamColor: teamColor(winner.teamId),
+              teamLogo: winner.teamLogo,
               photo: winner.photo,
               number: winner.driverNumber,
             }),
