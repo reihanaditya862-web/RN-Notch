@@ -28,6 +28,7 @@ import { useF1Hub } from "../hooks/useF1Hub";
 import { useFileDrop } from "../hooks/useFileDrop";
 import { useForegroundState } from "../hooks/useForegroundState";
 import { useHoverDelay } from "../hooks/useHoverDelay";
+import { useLyrics } from "../hooks/useLyrics";
 import { useMediaSession } from "../hooks/useMediaSession";
 import { useNativeEvents } from "../hooks/useNativeEvents";
 import { usePomodoro } from "../hooks/usePomodoro";
@@ -45,7 +46,9 @@ import {
   MEDIA_POLL_IDLE_MS,
   NEON_IDLE_COLOR,
   NOTCH_SIZES,
-  SHADOW_NONE,
+  DEEP_SLEEP_AFTER_MS,
+  MEDIA_POLL_SLEEP_MS,
+  SYSTEM_POLL_SLEEP_MS,
   SHADOW_RAISED,
   SPRING_COLLAPSE,
   SPRING_ENTRANCE,
@@ -345,13 +348,30 @@ export function NotchContainer() {
   // dashboard, and the banner must not sit on its header for good.
   useAlertTimer(currentAlert, cursorOver && state === "alert");
 
+  // Deep sleep: the collapsed capsule has not been touched for a while, so
+  // the polls slow right down (track changes still arrive as events).
+  const [isDeepSleep, setIsDeepSleep] = useState(false);
+  const isUntouched = isCollapsedState(state) && !cursorOver;
+  useEffect(() => {
+    if (!isUntouched) {
+      setIsDeepSleep(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setIsDeepSleep(true), DEEP_SLEEP_AFTER_MS);
+    return () => window.clearTimeout(timer);
+  }, [isUntouched]);
+
   // Nothing is polled while the capsule is off screen, and no media while its
   // widget is off. Battery saver stretches whatever interval remains.
   const mediaPollIntervalMs =
-    scalePoll(isOpen ? MEDIA_POLL_HOVER_MS : MEDIA_POLL_IDLE_MS) ?? MEDIA_POLL_IDLE_MS;
+    scalePoll(
+      isOpen ? MEDIA_POLL_HOVER_MS : isDeepSleep ? MEDIA_POLL_SLEEP_MS : MEDIA_POLL_IDLE_MS,
+    ) ?? MEDIA_POLL_IDLE_MS;
   const { media, playPause, next, previous, seek, toggleShuffle, cycleRepeat } = useMediaSession(
     !isHidden && widgets.media ? mediaPollIntervalMs : null,
   );
+  // The line of synced lyrics being sung, when the module is on.
+  const lyric = useLyrics(media?.is_playing ? media : null, settings.features.lyrics && !isHidden);
   // The neon outline, the waveform and the seek bar take the cover's colours
   // while the track plays, and turn white when it pauses or has no cover.
   const coverPalette = useAlbumPalette(media);
@@ -360,7 +380,13 @@ export function NotchContainer() {
   useSystemInfo(
     isHidden
       ? null
-      : scalePoll(state === "expanded" ? SYSTEM_POLL_EXPANDED_MS : SYSTEM_POLL_IDLE_MS),
+      : scalePoll(
+          state === "expanded"
+            ? SYSTEM_POLL_EXPANDED_MS
+            : isDeepSleep
+              ? SYSTEM_POLL_SLEEP_MS
+              : SYSTEM_POLL_IDLE_MS,
+        ),
   );
 
   // A drop shows the dashboard, so the user sees the file land on the shelf.
@@ -743,6 +769,7 @@ export function NotchContainer() {
     onSeek: seek,
     onToggleShuffle: toggleShuffle,
     onCycleRepeat: cycleRepeat,
+    lyric,
   };
   /** The pop-up's own height inside the border; the AI drawer hangs below it. */
   const pillHeight = NOTCH_SIZES.hover.height - BORDER_WIDTH * 2;
@@ -768,6 +795,7 @@ export function NotchContainer() {
             onSeek={seek}
             onToggleShuffle={toggleShuffle}
             onCycleRepeat={cycleRepeat}
+            lyric={lyric}
             trailing={
               <>
                 <ClockDisplay />
@@ -779,7 +807,11 @@ export function NotchContainer() {
         <AiDrawer top={pillHeight - AI_TRIGGER_HEIGHT} />
       </div>
     ) : (
-      <IdleView media={state === "idleMedia" ? media : null} isDndEnabled={settings.dnd_enabled} />
+      <IdleView
+        media={state === "idleMedia" ? media : null}
+        isDndEnabled={settings.dnd_enabled}
+        lyric={lyric}
+      />
     );
 
   /** Over the dashboard and the settings panel a pop-up is a banner. */
@@ -924,16 +956,33 @@ export function NotchContainer() {
           <motion.path d={fillPath} fill={`url(#${glowStartId})`} />
         </svg>
 
-        {/* Clips the content to the capsule and carries the drop shadow. */}
+        {/*
+          Drop shadow of the raised capsule. The shadow itself never changes;
+          only its opacity does, which the compositor handles without
+          repainting.
+        */}
+        <motion.div
+          aria-hidden="true"
+          style={{
+            borderTopLeftRadius: clipTopRadius,
+            borderTopRightRadius: clipTopRadius,
+            borderBottomLeftRadius: bottomRadius,
+            borderBottomRightRadius: bottomRadius,
+            boxShadow: SHADOW_RAISED,
+            opacity: isRaised && !isBatterySaver ? 1 : 0,
+          }}
+          className="pointer-events-none absolute inset-0 transition-opacity duration-200"
+        />
+
+        {/* Clips the content to the capsule. */}
         <motion.div
           style={{
             borderTopLeftRadius: clipTopRadius,
             borderTopRightRadius: clipTopRadius,
             borderBottomLeftRadius: bottomRadius,
             borderBottomRightRadius: bottomRadius,
-            boxShadow: isRaised && !isBatterySaver ? SHADOW_RAISED : SHADOW_NONE,
           }}
-          className="absolute inset-0 overflow-hidden transition-shadow duration-200"
+          className="absolute inset-0 overflow-hidden"
         >
           {/*
             Each view has the fixed size of its own state and is centered in

@@ -267,6 +267,19 @@ body {
   animation: notch-rev-jitter 70ms linear infinite;
 }
 
+/*
+ * Draw only when something moves: while the capsule is retracted to its lip
+ * or off screen (fullscreen app, lock screen), nothing it shows is visible,
+ * so its looping animations hold still and the GPU has nothing to paint.
+ */
+[data-state][data-retracted="true"] .notch-wave-bar,
+[data-state][data-retracted="true"] .notch-ambient-breathing,
+[data-state][aria-hidden="true"] .notch-wave-bar,
+[data-state][aria-hidden="true"] .notch-ambient-breathing,
+[data-state][aria-hidden="true"] .notch-rev-jitter {
+  animation-play-state: paused;
+}
+
 /* Looping animations stop when the system asks for reduced motion... */
 @media (prefers-reduced-motion: reduce) {
   .notch-pulse,

@@ -7,6 +7,7 @@ import {
   Cpu,
   ExternalLink,
   Flag,
+  MicVocal,
   Moon,
   Music,
   Palette,
@@ -288,6 +289,7 @@ const FEATURES: Array<{ key: keyof Features; label: string; icon: ReactNode }> =
   },
   { key: "audio_mixer", label: "Audio mixer", icon: <SlidersHorizontal size={14} strokeWidth={1.5} /> },
   { key: "f1_hub", label: "F1 Race Hub", icon: <Flag size={14} strokeWidth={1.5} /> },
+  { key: "lyrics", label: "Live lyrics", icon: <MicVocal size={14} strokeWidth={1.5} /> },
 ];
 
 type NotificationAccess = "allowed" | "denied" | "unspecified" | "unavailable";

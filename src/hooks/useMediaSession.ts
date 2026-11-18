@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { toastAlert } from "../lib/alerts";
 import type { MediaInfo, RepeatMode } from "../lib/types";
 import { useNotchStore } from "../stores/notchStore";
@@ -19,6 +20,9 @@ interface MediaSession {
 
 /** After a transport command, give the media app this long to update Windows. */
 const COMMAND_SETTLE_MS = 250;
+
+/** Several media events in a row become one refresh after this pause. */
+const MEDIA_EVENT_SETTLE_MS = 150;
 
 /** How long a button press outranks what the polls report, in ms. */
 const OPTIMISTIC_HOLD_MS = 800;
@@ -191,6 +195,31 @@ export function useMediaSession(pollIntervalMs: number | null): MediaSession {
       window.clearTimeout(timer);
     };
   }, [pollIntervalMs, refresh, commit]);
+
+  // Track and playback changes are pushed by Rust (`media-changed`), so the
+  // capsule shows them at once even between slow polls. A burst of events
+  // turns into one refresh.
+  const isPolling = pollIntervalMs !== null;
+  useEffect(() => {
+    if (!isTauri() || !isPolling) return;
+    let disposed = false;
+    let timer = 0;
+    let stop: (() => void) | undefined;
+    listen("media-changed", () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => void refresh(), MEDIA_EVENT_SETTLE_MS);
+    })
+      .then((unlisten) => {
+        if (disposed) unlisten();
+        else stop = unlisten;
+      })
+      .catch((error: unknown) => console.warn("[useMediaSession] media events unavailable:", error));
+    return () => {
+      disposed = true;
+      window.clearTimeout(timer);
+      stop?.();
+    };
+  }, [isPolling, refresh]);
 
   const runCommand = useCallback(
     async (command: MediaCommand, args?: Record<string, unknown>) => {

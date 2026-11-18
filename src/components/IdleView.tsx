@@ -3,6 +3,7 @@ import type { MediaInfo } from "../lib/types";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { BatteryIndicator } from "./widgets/BatteryIndicator";
 import { ClockDisplay } from "./widgets/ClockDisplay";
+import { LyricLine } from "./widgets/LyricLine";
 import { MediaWaveform } from "./widgets/MediaWaveform";
 
 interface IdleViewProps {
@@ -10,6 +11,8 @@ interface IdleViewProps {
   media: MediaInfo | null;
   /** Do Not Disturb is on: show the purple dot and the moon. */
   isDndEnabled: boolean;
+  /** The lyric line being sung; shown instead of the title when not null. */
+  lyric?: string | null;
 }
 
 /** Purple dot + moon: the capsule will not open or widen by itself. */
@@ -33,7 +36,7 @@ function DndIndicator() {
  * - No media: clock on the left, battery on the right.
  * - Media playing: waveform and song title, then clock and battery.
  */
-export function IdleView({ media, isDndEnabled }: IdleViewProps) {
+export function IdleView({ media, isDndEnabled, lyric = null }: IdleViewProps) {
   const clock = (
     <ErrorBoundary label="Clock" fallback={null}>
       <ClockDisplay />
@@ -63,12 +66,16 @@ export function IdleView({ media, isDndEnabled }: IdleViewProps) {
     <div className="flex h-full w-full items-center gap-2 px-3">
       <MediaWaveform isPlaying={media.is_playing} />
       {/* No `title` tooltip here: hovering expands the capsule, and the tooltip would linger over it. */}
-      <span
-        aria-label={`Now playing: ${label}`}
-        className="min-w-0 flex-1 truncate font-display text-[12px] leading-4 font-bold text-notch-primary"
-      >
-        {media.title}
-      </span>
+      {lyric !== null ? (
+        <LyricLine text={lyric} className="text-[12px] leading-4 font-semibold text-notch-primary" />
+      ) : (
+        <span
+          aria-label={`Now playing: ${label}`}
+          className="min-w-0 flex-1 truncate font-display text-[12px] leading-4 font-bold text-notch-primary"
+        >
+          {media.title}
+        </span>
+      )}
       {clock}
       {battery}
     </div>

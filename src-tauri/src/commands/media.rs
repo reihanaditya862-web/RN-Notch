@@ -3,13 +3,14 @@
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 use windows::Media::Control::{
     GlobalSystemMediaTransportControlsSession as Session,
     GlobalSystemMediaTransportControlsSessionManager as SessionManager,
@@ -17,7 +18,11 @@ use windows::Media::Control::{
     GlobalSystemMediaTransportControlsSessionPlaybackStatus as PlaybackStatus,
 };
 use windows::Media::MediaPlaybackAutoRepeatMode as RepeatMode;
+use windows::Foundation::TypedEventHandler;
 use windows::Storage::Streams::DataReader;
+use windows::core::{Interface, Ref};
+
+use super::background::ensure_com;
 
 /// Windows time values are counted in 100-nanosecond ticks.
 const TICKS_PER_MS: i64 = 10_000;
@@ -401,6 +406,103 @@ pub fn get_media_info(
         *lock(&state.manager) = None;
         format!("failed to read media session: {error}")
     })
+}
+
+/// Emitted (without data) when a media session reports a change: another
+/// track, play or pause, an app starting or stopping. The frontend then asks
+/// for the details, so it can poll slowly the rest of the time.
+pub const MEDIA_CHANGED_EVENT: &str = "media-changed";
+
+/// Sessions we listen to: identity, the session, and the two event tokens.
+type Listened = Vec<(usize, Session, i64, i64)>;
+
+fn announce(app: &AppHandle) {
+    let _ = app.emit(MEDIA_CHANGED_EVENT, ());
+}
+
+/// Listens to every current session's track and playback changes, and stops
+/// listening to sessions that are gone.
+fn listen_to_sessions(app: &AppHandle, manager: &SessionManager, listened: &Mutex<Listened>) {
+    let Ok(sessions) = manager.GetSessions() else {
+        return;
+    };
+    let current: Vec<Session> = sessions.into_iter().collect();
+    let identity = |session: &Session| session.as_raw() as usize;
+
+    let mut listened = lock(listened);
+    listened.retain(|(key, session, properties, playback)| {
+        let alive = current.iter().any(|candidate| identity(candidate) == *key);
+        if !alive {
+            let _ = session.RemoveMediaPropertiesChanged(*properties);
+            let _ = session.RemovePlaybackInfoChanged(*playback);
+        }
+        alive
+    });
+
+    for session in current {
+        let key = identity(&session);
+        if listened.iter().any(|(known, ..)| *known == key) {
+            continue;
+        }
+        let on_properties = app.clone();
+        let on_playback = app.clone();
+        let properties = session.MediaPropertiesChanged(&TypedEventHandler::new(move |_, _| {
+            announce(&on_properties);
+            Ok(())
+        }));
+        let playback = session.PlaybackInfoChanged(&TypedEventHandler::new(move |_, _| {
+            announce(&on_playback);
+            Ok(())
+        }));
+        if let (Ok(properties), Ok(playback)) = (properties, playback) {
+            listened.push((key, session, properties, playback));
+        }
+    }
+}
+
+/// Starts listening to the media sessions' own change events.
+pub fn spawn_event_watcher(app: AppHandle) -> std::io::Result<()> {
+    thread::Builder::new()
+        .name("notch-media-events".into())
+        .spawn(move || {
+            ensure_com();
+            let Ok(manager) = SessionManager::RequestAsync().and_then(|operation| operation.join())
+            else {
+                return;
+            };
+            let listened: Arc<Mutex<Listened>> = Arc::new(Mutex::new(Vec::new()));
+            listen_to_sessions(&app, &manager, &listened);
+
+            let rescan = {
+                let app = app.clone();
+                let listened = listened.clone();
+                move |manager: &SessionManager| {
+                    listen_to_sessions(&app, manager, &listened);
+                    announce(&app);
+                }
+            };
+            let on_sessions = rescan.clone();
+            let _ = manager.SessionsChanged(&TypedEventHandler::new(move |sender: Ref<SessionManager>, _| {
+                if let Some(manager) = sender.as_ref() {
+                    on_sessions(manager);
+                }
+                Ok(())
+            }));
+            let _ = manager.CurrentSessionChanged(&TypedEventHandler::new(
+                move |sender: Ref<SessionManager>, _| {
+                    if let Some(manager) = sender.as_ref() {
+                        rescan(manager);
+                    }
+                    Ok(())
+                },
+            ));
+
+            // The manager and the handlers live as long as this thread.
+            loop {
+                thread::park();
+            }
+        })
+        .map(|_| ())
 }
 
 /// Runs a transport control (play/pause, next, previous) on the active session.

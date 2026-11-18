@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import type { MediaInfo, RepeatMode } from "../../lib/types";
 import { DigitText } from "./DigitText";
+import { LyricLine } from "./LyricLine";
 
 interface MediaPillProps {
   /** The active session, or null to show the "nothing playing" state. */
@@ -26,6 +27,8 @@ interface MediaPillProps {
   onCycleRepeat: () => void;
   /** Rendered at the right end of the control row (clock, battery). */
   trailing?: ReactNode;
+  /** The lyric line being sung; replaces the artist line when not null. */
+  lyric?: string | null;
   /** Padding classes; override when the pill is embedded in a padded layout. */
   className?: string;
 }
@@ -256,6 +259,7 @@ export function MediaPill({
   onToggleShuffle,
   onCycleRepeat,
   trailing,
+  lyric = null,
   className = "px-3 py-2.5",
 }: MediaPillProps) {
   const hasMedia = media !== null;
@@ -294,12 +298,16 @@ export function MediaPill({
             text={hasMedia ? media.title : "Nothing playing"}
             className="font-display text-[13px] leading-[18px] font-bold text-notch-primary"
           />
-          <TruncatedText
-            text={
-              hasMedia ? media.artist || media.source : "Play something in Spotify or your browser"
-            }
-            className="text-[12px] leading-4 text-notch-secondary"
-          />
+          {lyric !== null ? (
+            <LyricLine text={lyric} className="text-[12px] leading-4 font-medium text-notch-primary/85" />
+          ) : (
+            <TruncatedText
+              text={
+                hasMedia ? media.artist || media.source : "Play something in Spotify or your browser"
+              }
+              className="text-[12px] leading-4 text-notch-secondary"
+            />
+          )}
         </div>
 
         {hasMedia && media.artist && (

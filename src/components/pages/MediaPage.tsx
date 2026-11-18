@@ -17,6 +17,8 @@ export interface MediaControls {
   onSeek: (positionMs: number) => void;
   onToggleShuffle: () => void;
   onCycleRepeat: () => void;
+  /** The lyric line being sung, or null. */
+  lyric: string | null;
 }
 
 /**
@@ -86,6 +88,7 @@ export function MediaPage({
                 onSeek={controls.onSeek}
                 onToggleShuffle={controls.onToggleShuffle}
                 onCycleRepeat={controls.onCycleRepeat}
+                lyric={controls.lyric}
                 className="p-0"
                 trailing={
                   <>

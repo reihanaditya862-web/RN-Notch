@@ -2,11 +2,12 @@
 //! drops, a Bluetooth device connects, a display is plugged in or out, the
 //! charger is connected or removed, the battery runs low or is full.
 //!
-//! A light loop takes a snapshot every two seconds (Bluetooth every six) and
-//! compares it with the previous one. The first snapshot is only a baseline,
-//! so starting the app announces nothing.
+//! The loop sleeps until Windows reports a change (see `events.rs`), then
+//! takes a snapshot and compares it with the previous one. The first snapshot
+//! is only a baseline, so starting the app announces nothing.
 
 use std::collections::BTreeSet;
+use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::thread;
 use std::time::Duration;
 
@@ -23,10 +24,6 @@ use super::background::{ensure_com, features, should_slow_down};
 /// Emitted with a `HardwareAlert` for each change worth showing.
 pub const HARDWARE_EVENT: &str = "hardware-alert";
 
-const POLL_FAST: Duration = Duration::from_secs(2);
-const POLL_SLOW: Duration = Duration::from_secs(6);
-/// Bluetooth lookups are the expensive part; they run every n-th round.
-const BLUETOOTH_EVERY: u32 = 3;
 
 const BATTERY_LOW: u8 = 20;
 const BATTERY_CRITICAL: u8 = 10;
@@ -247,61 +244,66 @@ fn read_battery() -> Option<Battery> {
 }
 
 /// Starts the loop that watches the hardware.
-pub fn spawn_watcher(app: AppHandle) -> std::io::Result<()> {
+/// Without any event the state is still looked at this often: a battery that
+/// drains slowly does not always raise one.
+const SAFETY_INTERVAL: Duration = Duration::from_secs(60);
+/// One change often comes as several events; they are given time to settle.
+const SETTLE: Duration = Duration::from_millis(400);
+
+/// Starts the loop that watches the hardware. It sleeps until `wake` says
+/// something changed (see `events.rs`).
+pub fn spawn_watcher(app: AppHandle, wake: Receiver<()>) -> std::io::Result<()> {
     thread::Builder::new()
         .name("notch-hardware".into())
-        .spawn(move || watch(&app))
+        .spawn(move || watch(&app, &wake))
         .map(|_| ())
 }
 
-fn watch(app: &AppHandle) {
+/// Waits for the next event (or the safety interval), then lets a burst of
+/// events settle into one round.
+fn wait(wake: &Receiver<()>) {
+    match wake.recv_timeout(SAFETY_INTERVAL) {
+        Ok(()) => {
+            thread::sleep(SETTLE);
+            while wake.try_recv().is_ok() {}
+        }
+        Err(RecvTimeoutError::Timeout) => {}
+        Err(RecvTimeoutError::Disconnected) => thread::sleep(SAFETY_INTERVAL),
+    }
+}
+
+fn watch(app: &AppHandle, wake: &Receiver<()>) {
     ensure_com();
     let mut previous: Option<Snapshot> = None;
-    let mut round: u32 = 0;
-    let mut last_bluetooth: Option<BTreeSet<String>> = None;
 
     loop {
-        let slow = should_slow_down(app);
-        thread::sleep(if slow { POLL_SLOW } else { POLL_FAST });
-
+        // The first round after start (or after switching the module on)
+        // takes the baseline at once.
+        if previous.is_some() || !features(app).hardware_alerts {
+            wait(wake);
+        }
         if !features(app).hardware_alerts {
             previous = None;
-            last_bluetooth = None;
             continue;
         }
 
-        round = round.wrapping_add(1);
-        let bluetooth = if round % BLUETOOTH_EVERY == 1 || last_bluetooth.is_none() {
-            let names = read_bluetooth();
-            if names.is_some() {
-                last_bluetooth.clone_from(&names);
-            }
-            names
-        } else {
-            None
-        };
-
         let snapshot = Snapshot {
             wifi: read_wifi(),
-            bluetooth,
+            // A failed lookup keeps the last known list rather than "none".
+            bluetooth: read_bluetooth()
+                .or_else(|| previous.as_ref().and_then(|before| before.bluetooth.clone())),
             monitors: unsafe { GetSystemMetrics(SM_CMONITORS) },
             battery: read_battery(),
         };
 
         if let Some(before) = &previous
-            && !slow
+            && !should_slow_down(app)
         {
             for alert in changes(before, &snapshot) {
                 let _ = app.emit(HARDWARE_EVENT, alert);
             }
         }
-
-        // Bluetooth is compared against the last round that looked at it, so
-        // the baseline keeps that list even on rounds that skipped it.
-        previous = Some(Snapshot {
-            bluetooth: last_bluetooth.clone(),
-            ..snapshot
-        });
+        previous = Some(snapshot);
     }
 }
 

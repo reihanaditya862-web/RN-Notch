@@ -98,6 +98,8 @@ export interface Features {
   clipboard_history: boolean;
   audio_mixer: boolean;
   f1_hub: boolean;
+  /** Synced lyrics (LRCLIB) in place of the title while a song plays. */
+  lyrics: boolean;
 }
 
 /** Mirrors the Rust `ForegroundState` struct in `src-tauri/src/commands/window_detector.rs`. */

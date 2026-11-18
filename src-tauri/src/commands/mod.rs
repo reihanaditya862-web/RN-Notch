@@ -3,6 +3,7 @@ pub mod audio;
 pub mod autostart;
 pub mod background;
 pub mod clipboard;
+pub mod events;
 pub mod hardware;
 pub mod http;
 pub mod icons;

@@ -24,7 +24,7 @@ use super::{http, icons, notifications};
 
 /// The list of installed apps is read again after this long.
 const CATALOG_TTL: Duration = Duration::from_secs(10 * 60);
-const ICON_SIZE: u32 = 48;
+const ICON_SIZE: u32 = 32;
 
 struct AiApp {
     id: &'static str,

@@ -1,5 +1,6 @@
 //! Small HTTPS client for the few web services the capsule reads: the F1
-//! schedule and results (Jolpica), driver photos (Wikipedia), and site icons
+//! schedule and results (Jolpica), driver photos and team logos (Wikipedia),
+//! synced song lyrics (LRCLIB), and site icons
 //! for AI apps that are not installed.
 //!
 //! Uses Windows' own HTTP stack (`Windows.Web.Http`), so no extra library is
@@ -21,13 +22,14 @@ use super::background::ensure_com;
 const USER_AGENT: &str = "RN-Notch/1.1 (Windows desktop widget)";
 
 /// Hosts that may be fetched, with the path every URL must start with.
-const ALLOWED: [(&str, &str); 6] = [
+const ALLOWED: [(&str, &str); 7] = [
     ("api.jolpi.ca", "/ergast/f1/"),
     ("en.wikipedia.org", "/api/rest_v1/page/summary/"),
     ("upload.wikimedia.org", "/"),
     ("thumb.wikimedia.org", "/"),
     ("www.google.com", "/s2/favicons"),
     ("t0.gstatic.com", "/faviconV2"),
+    ("lrclib.net", "/api/"),
 ];
 
 const TIMEOUT: Duration = Duration::from_secs(15);

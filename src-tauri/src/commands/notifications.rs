@@ -3,7 +3,7 @@
 //! Windows lets a desktop app read the Action Center through
 //! `UserNotificationListener` once the user allows it (Settings > Privacy >
 //! Notifications). Its `NotificationChanged` event needs a packaged app, so
-//! the list is read every 1.5 s instead and only notifications with an id not
+//! the list is read every 2 s instead and only notifications with an id not
 //! seen before are passed on. Whatever is already there when the loop starts,
 //! or arrives while the capsule is off screen, is never announced.
 
@@ -26,14 +26,14 @@ use super::icons;
 /// Emitted with an `AppNotification` for each new notification.
 pub const NOTIFICATION_EVENT: &str = "app-notification";
 
-const POLL_FAST: Duration = Duration::from_millis(1500);
-const POLL_SLOW: Duration = Duration::from_secs(5);
+const POLL_FAST: Duration = Duration::from_secs(2);
+const POLL_SLOW: Duration = Duration::from_secs(6);
 
 /// A burst (an app sending ten at once) is cut to the newest few.
 const MAX_PER_ROUND: usize = 3;
 const TITLE_MAX_CHARS: usize = 120;
 const BODY_MAX_CHARS: usize = 240;
-const ICON_SIZE: u32 = 48;
+const ICON_SIZE: u32 = 32;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AppNotification {

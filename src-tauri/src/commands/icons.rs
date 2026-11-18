@@ -5,7 +5,6 @@
 //! classic programs alike). That covers the senders of notifications, the AI
 //! apps in the drawer and the programs in the volume mixer.
 
-use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock, PoisonError};
 
 use base64::Engine;
@@ -22,33 +21,41 @@ use windows::core::HSTRING;
 
 use super::background::ensure_com;
 
-/// Icons kept in memory; enough for every app that is likely to show up.
-const CACHE_LIMIT: usize = 64;
+/// Icons kept in memory, least recently used dropped first.
+const CACHE_LIMIT: usize = 20;
+/// No icon is drawn larger than this anywhere in the capsule.
+const MAX_SIZE: u32 = 32;
 
-fn cache() -> &'static Mutex<HashMap<String, Option<String>>> {
-    static CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+/// Name -> icon (or a remembered miss), oldest use first.
+type IconCache = Vec<(String, Option<String>)>;
+
+fn cache() -> &'static Mutex<IconCache> {
+    static CACHE: OnceLock<Mutex<IconCache>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(Vec::with_capacity(CACHE_LIMIT)))
 }
 
-/// Icon of the shell item `parsing_name` at `size` x `size` px, as a PNG
+/// Icon of the shell item `parsing_name` at up to 32 x 32 px, as a PNG
 /// `data:` URL. `None` when the shell has no icon for it. Results (also
-/// misses) are cached by name and size.
+/// misses) are kept in a small LRU cache.
 pub fn shell_icon(parsing_name: &str, size: u32) -> Option<String> {
+    let size = size.min(MAX_SIZE);
     let key = format!("{size}|{parsing_name}");
-    if let Some(hit) = cache()
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .get(&key)
     {
-        return hit.clone();
+        let mut cache = cache().lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(index) = cache.iter().position(|(name, _)| *name == key) {
+            let entry = cache.remove(index);
+            let icon = entry.1.clone();
+            cache.push(entry);
+            return icon;
+        }
     }
 
     let icon = load_icon(parsing_name, size);
     let mut cache = cache().lock().unwrap_or_else(PoisonError::into_inner);
     if cache.len() >= CACHE_LIMIT {
-        cache.clear();
+        cache.remove(0);
     }
-    cache.insert(key, icon.clone());
+    cache.push((key, icon.clone()));
     icon
 }
 

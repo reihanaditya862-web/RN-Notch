@@ -181,7 +181,7 @@ const ALERT_CHROME_WIDTH = 14 + 30 + 10 + 22 + 14;
  * "Charging 80%" stays small and a message gets room.
  */
 export function alertSize(alert: Alert): { width: number; height: number } {
-  if (alert.winner) return { width: 380, height: 84 };
+  if (alert.winner) return { width: 400, height: 100 };
   if (alert.session) return { width: 400, height: 76 };
 
   const text = Math.max(

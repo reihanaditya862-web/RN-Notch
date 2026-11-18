@@ -25,11 +25,18 @@ use commands::settings::{self, SETTINGS_DIR, SETTINGS_FILE, SettingsState};
 use commands::system::{self, SystemState};
 use commands::window_detector::{self, ForegroundWatch};
 use commands::{
-    apps, audio, autostart, clipboard, hardware, http, mixer, picker, screen_tools,
+    apps, audio, autostart, clipboard, events, hardware, http, mixer, picker, screen_tools,
 };
 
 /// Name shown to the user (tray tooltip, menu texts).
 pub(crate) const APP_NAME: &str = "RN Notch";
+
+/// WebView2 arguments of every window: the defaults Tauri would pass, plus a
+/// cap on the JavaScript heap so garbage collection runs early. Must match
+/// `additionalBrowserArgs` in `tauri.conf.json` exactly, because WebView2
+/// windows that share a data folder must also share their arguments.
+pub(crate) const BROWSER_ARGS: &str =
+    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --js-flags=--max-old-space-size=96";
 
 /// Label of the notch window, as declared in `tauri.conf.json`.
 pub(crate) const NOTCH_LABEL: &str = "notch";
@@ -519,10 +526,23 @@ pub fn run() {
             // settings on every round, and eases off while the capsule is
             // off screen or the session is locked. None of them is needed
             // for the capsule itself, so a failure to start is only logged.
+            // Hardware and clipboard sleep until Windows reports a change; the
+            // media watcher pushes track and playback changes to the frontend.
+            let (hardware_wake, clipboard_wake) = match events::start() {
+                Ok(wakeups) => (wakeups.hardware, wakeups.clipboard),
+                Err(error) => {
+                    eprintln!("could not listen for Windows events: {error}");
+                    // Without events the loops still check on their safety interval.
+                    let (_, hardware) = std::sync::mpsc::channel();
+                    let (_, clipboard) = std::sync::mpsc::channel();
+                    (hardware, clipboard)
+                }
+            };
             for (name, started) in [
                 ("notifications", notifications::spawn_watcher(app.handle().clone())),
-                ("hardware", hardware::spawn_watcher(app.handle().clone())),
-                ("clipboard", clipboard::spawn_watcher(app.handle().clone())),
+                ("hardware", hardware::spawn_watcher(app.handle().clone(), hardware_wake)),
+                ("clipboard", clipboard::spawn_watcher(app.handle().clone(), clipboard_wake)),
+                ("media", media::spawn_event_watcher(app.handle().clone())),
             ] {
                 if let Err(error) = started {
                     eprintln!("could not start the {name} watcher: {error}");

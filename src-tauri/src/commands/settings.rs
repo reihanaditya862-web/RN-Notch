@@ -180,6 +180,8 @@ pub struct Features {
     pub audio_mixer: bool,
     /// Race-week schedule, session reminders and the winner card.
     pub f1_hub: bool,
+    /// The current line of synced lyrics (LRCLIB) in place of the title.
+    pub lyrics: bool,
 }
 
 impl Default for Features {
@@ -190,6 +192,7 @@ impl Default for Features {
             clipboard_history: true,
             audio_mixer: true,
             f1_hub: true,
+            lyrics: true,
         }
     }
 }
@@ -306,6 +309,7 @@ impl AppSettings {
                 ),
                 audio_mixer: feature("audio_mixer", defaults.features.audio_mixer),
                 f1_hub: feature("f1_hub", defaults.features.f1_hub),
+                lyrics: feature("lyrics", defaults.features.lyrics),
             },
         }
         .sanitized()
@@ -546,6 +550,7 @@ mod tests {
         assert!(!settings.features.clipboard_history);
         assert!(settings.features.audio_mixer, "an invalid value keeps the default");
         assert!(settings.features.notifications);
+        assert!(settings.features.lyrics, "lyrics default to on");
 
         let json = serde_json::to_value(settings).unwrap();
         assert_eq!(json["features"]["f1_hub"], false);

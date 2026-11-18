@@ -1,45 +1,73 @@
+import { initials } from "../../lib/f1";
+
 /**
- * The team behind the winner: a gradient of the team colour and the team
- * logo, drawn large behind the driver's photo and name. Both fade out
- * towards the edges, so the card melts into the black capsule instead of
- * sitting on it as a box. The parent must be `relative overflow-hidden`.
+ * A soft gradient of the team colour from the left edge, fading into the
+ * black capsule. The parent must be `relative overflow-hidden`.
  */
-export function TeamBackdrop({
+export function TeamGlow({ color }: { color: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0"
+      style={{ background: `linear-gradient(90deg, ${color}70 0%, ${color}24 42%, transparent 75%)` }}
+    />
+  );
+}
+
+/**
+ * The winner's portrait in front of the team logo: the photo as a rounded
+ * square in the team colour, and behind it a larger, tilted card carrying
+ * the logo that fades out to the right, into the capsule. The element is
+ * wider than the photo, so the text beside it starts after the fade.
+ */
+export function WinnerHero({
+  photo,
   logo,
   color,
-  logoHeight,
+  driver,
+  size,
 }: {
+  photo: string | null;
   logo: string | null;
   color: string;
-  /** Height of the logo in px; larger than the photo it sits behind. */
-  logoHeight: number;
+  driver: string;
+  /** Side of the photo, in px; the logo card is about 1.4 times larger. */
+  size: number;
 }) {
   return (
-    <span aria-hidden="true" className="pointer-events-none absolute inset-0">
-      <span
-        className="absolute inset-0"
-        style={{
-          background: `linear-gradient(90deg, ${color}66 0%, ${color}26 38%, transparent 72%)`,
-        }}
-      />
+    <span className="relative shrink-0" style={{ width: Math.round(size * 1.8), height: size }}>
       {logo && (
-        <img
-          src={logo}
-          alt=""
-          draggable={false}
-          className="absolute top-1/2 left-3 max-w-[78%] -translate-y-1/2 object-contain object-left"
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute flex items-center justify-center rounded-xl bg-white/95"
           style={{
-            height: logoHeight,
-            opacity: 0.42,
-            // Fades to nothing at its right end and towards the top and
-            // bottom, where the capsule's edge takes over.
-            maskImage:
-              "linear-gradient(90deg, #000 0%, #000 45%, transparent 92%), linear-gradient(180deg, transparent 0%, #000 22%, #000 78%, transparent 100%)",
-            maskComposite: "intersect",
-            WebkitMaskComposite: "source-in",
+            left: Math.round(size * 0.45),
+            top: Math.round(-size * 0.2),
+            width: Math.round(size * 1.45),
+            height: Math.round(size * 1.15),
+            // The photo covers the card's left part; the logo sits in the rest.
+            padding: Math.round(size * 0.1),
+            paddingLeft: Math.round(size * 0.62),
+            transform: "rotate(-9deg)",
+            maskImage: "linear-gradient(90deg, #000 0%, #000 62%, transparent 100%)",
+            WebkitMaskImage: "linear-gradient(90deg, #000 0%, #000 62%, transparent 100%)",
           }}
-        />
+        >
+          <img src={logo} alt="" draggable={false} className="max-h-full max-w-full object-contain" />
+        </span>
       )}
+      <span
+        className="relative z-10 flex items-center justify-center overflow-hidden rounded-xl shadow-[0_6px_18px_rgb(0_0_0/0.55)]"
+        style={{ width: size, height: size, backgroundColor: color }}
+      >
+        {photo ? (
+          <img src={photo} alt="" draggable={false} className="h-full w-full object-cover object-top" />
+        ) : (
+          <span className="font-display font-bold text-white" style={{ fontSize: Math.round(size * 0.32) }}>
+            {initials(driver)}
+          </span>
+        )}
+      </span>
     </span>
   );
 }

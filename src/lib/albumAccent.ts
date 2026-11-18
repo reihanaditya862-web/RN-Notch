@@ -20,6 +20,18 @@ const MAX_LIGHTNESS = 0.72;
 const MIN_OUTPUT_SATURATION = 0.6;
 const CACHE_LIMIT = 32;
 
+/** One small canvas, reused for every cover, so sampling allocates nothing new. */
+let samplerContext: CanvasRenderingContext2D | null = null;
+
+function sampler(): CanvasRenderingContext2D | null {
+  if (!samplerContext) {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = SAMPLE_SIZE;
+    samplerContext = canvas.getContext("2d", { willReadFrequently: true });
+  }
+  return samplerContext;
+}
+
 /** Cover key -> its colours (1-3), or null when the cover has no colour to speak of. */
 const cache = new Map<string, string[] | null>();
 
@@ -35,10 +47,9 @@ export async function extractPalette(key: string, imageUrl: string): Promise<str
   image.src = imageUrl;
   await image.decode();
 
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = SAMPLE_SIZE;
-  const context = canvas.getContext("2d", { willReadFrequently: true });
+  const context = sampler();
   if (!context) return null;
+  context.clearRect(0, 0, SAMPLE_SIZE, SAMPLE_SIZE);
   context.drawImage(image, 0, 0, SAMPLE_SIZE, SAMPLE_SIZE);
   const palette = pickPalette(context.getImageData(0, 0, SAMPLE_SIZE, SAMPLE_SIZE).data);
 

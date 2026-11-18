@@ -83,6 +83,7 @@ pub fn start_color_pick(app: AppHandle) -> Result<(), String> {
         .always_on_top(true)
         .skip_taskbar(true)
         .resizable(false)
+        .additional_browser_args(crate::BROWSER_ARGS)
         .visible(false)
         .build()
         .map_err(|error| format!("could not open the colour picker: {error}"))?;

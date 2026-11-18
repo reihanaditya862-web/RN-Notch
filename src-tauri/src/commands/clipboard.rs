@@ -1,12 +1,14 @@
 //! Clipboard history: text copied anywhere in Windows is passed to the
-//! frontend, which keeps the last ten entries in memory (never on disk).
+//! frontend, which keeps the last ten entries in memory (never on disk), each
+//! cut to 500 characters.
 //!
-//! The loop only compares Windows' clipboard sequence number, which costs
-//! next to nothing, and reads the text when it changed. Images and files are
+//! The loop sleeps until Windows reports a clipboard change, then compares
+//! the sequence number and reads the text when it changed. Images and files are
 //! ignored, and so is anything a password manager marks as private
 //! (`ExcludeClipboardContentFromMonitorProcessing`, or
 //! `CanIncludeInClipboardHistory` = 0, the flags Windows' own history obeys).
 
+use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::thread;
 use std::time::Duration;
 
@@ -21,38 +23,42 @@ use windows::Win32::System::Memory::{
 };
 use windows::core::w;
 
-use super::background::{features, should_slow_down};
+use super::background::features;
 
 /// Emitted with the copied text.
 pub const CLIPBOARD_EVENT: &str = "clipboard-text";
 
-const POLL_FAST: Duration = Duration::from_millis(700);
-const POLL_SLOW: Duration = Duration::from_secs(3);
+/// The sequence number is still compared this often, in case an event is lost.
+const SAFETY_INTERVAL: Duration = Duration::from_secs(30);
 
-/// Longer texts (a whole document) are not kept.
-const MAX_CHARS: usize = 4000;
+/// Each entry keeps at most this many characters; a whole document copied
+/// is cut, so the history stays small.
+const MAX_CHARS: usize = 500;
+/// Longest text accepted for copying back.
+const WRITE_MAX_CHARS: usize = 4000;
 
 /// `CF_UNICODETEXT`.
 const CF_UNICODETEXT: u32 = 13;
 
-/// Starts the loop that follows the clipboard.
-pub fn spawn_watcher(app: AppHandle) -> std::io::Result<()> {
+/// Starts the loop that follows the clipboard. It sleeps until Windows says
+/// the clipboard changed (`WM_CLIPBOARDUPDATE`, see `events.rs`).
+pub fn spawn_watcher(app: AppHandle, wake: Receiver<()>) -> std::io::Result<()> {
     thread::Builder::new()
         .name("notch-clipboard".into())
-        .spawn(move || watch(&app))
+        .spawn(move || watch(&app, &wake))
         .map(|_| ())
 }
 
-fn watch(app: &AppHandle) {
+fn watch(app: &AppHandle, wake: &Receiver<()>) {
     // What is on the clipboard when the loop starts is not "new".
     let mut last = unsafe { GetClipboardSequenceNumber() };
 
     loop {
-        thread::sleep(if should_slow_down(app) {
-            POLL_SLOW
-        } else {
-            POLL_FAST
-        });
+        match wake.recv_timeout(SAFETY_INTERVAL) {
+            Ok(()) | Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => thread::sleep(SAFETY_INTERVAL),
+        }
+        while wake.try_recv().is_ok() {}
 
         let sequence = unsafe { GetClipboardSequenceNumber() };
         if sequence == last {
@@ -116,7 +122,8 @@ fn read_text() -> Option<String> {
         let _ = CloseClipboard();
     }
     text.map(|text| text.trim().to_string())
-        .filter(|text| !text.is_empty() && text.chars().count() <= MAX_CHARS)
+        .filter(|text| !text.is_empty())
+        .map(|text| text.chars().take(MAX_CHARS).collect())
 }
 
 /// Reads `CF_UNICODETEXT`; the clipboard must be open.
@@ -129,7 +136,7 @@ unsafe fn read_locked_text() -> Option<String> {
             return None;
         }
         // Never read past the block, even when the text lacks its final nul.
-        let units = (GlobalSize(memory) / 2).min(MAX_CHARS * 2 + 1);
+        let units = (GlobalSize(memory) / 2).min(MAX_CHARS * 2 + 2);
         let slice = std::slice::from_raw_parts(pointer, units);
         let length = slice.iter().position(|&unit| unit == 0).unwrap_or(units);
         let text = String::from_utf16_lossy(&slice[..length]);
@@ -173,7 +180,7 @@ pub fn write_text(text: &str) -> Result<(), String> {
 
 #[tauri::command(async)]
 pub fn write_clipboard_text(text: String) -> Result<(), String> {
-    if text.chars().count() > MAX_CHARS {
+    if text.chars().count() > WRITE_MAX_CHARS {
         return Err("text too long".into());
     }
     write_text(&text)

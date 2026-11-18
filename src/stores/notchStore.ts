@@ -3,6 +3,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { type Alert, compareAlerts, isDuplicate } from "../lib/alerts";
 import {
   ALERT_QUEUE_LIMIT,
+  CLIPBOARD_MAX_CHARS,
   CLIPBOARD_MAX_ITEMS,
   DEFAULT_SETTINGS,
   GLOW_END_DEFAULT,
@@ -347,7 +348,8 @@ export const useNotchStore = create<NotchStore>()(
           if (features[feature] !== on) patchSettings({ features: { ...features, [feature]: on } });
         },
         addClip: (text) => {
-          const trimmed = text.trim();
+          // Entries are kept short: a whole copied document stays out of memory.
+          const trimmed = text.trim().slice(0, CLIPBOARD_MAX_CHARS);
           if (!trimmed) return;
           // Copying something already in the list moves it to the top.
           const others = get().clipItems.filter((item) => item.text !== trimmed);

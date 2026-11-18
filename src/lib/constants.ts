@@ -99,11 +99,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
     clipboard_history: true,
     audio_mixer: true,
     f1_hub: true,
+    lyrics: true,
   },
 };
 
 /** Clipboard history entries kept in memory (text and colour codes only). */
 export const CLIPBOARD_MAX_ITEMS = 10;
+/** Each clipboard entry keeps at most this many characters. */
+export const CLIPBOARD_MAX_CHARS = 500;
 
 /** How long each kind of pop-up stays, in ms (the cursor on it pauses the count). */
 export const ALERT_DURATION_MS = {
@@ -195,13 +198,23 @@ export const HOVER_LEAVE_DELAY_MS = 600;
  */
 export const HOVER_ENTER_DELAY_LIP_MS = 250;
 
-/** Media polling intervals, in ms. */
-export const MEDIA_POLL_IDLE_MS = 1000;
+/**
+ * Media polling intervals, in ms. Track and play/pause changes arrive at once
+ * as `media-changed` events, so the collapsed capsule only needs a slow poll;
+ * the open player polls faster for a smooth progress bar.
+ */
+export const MEDIA_POLL_IDLE_MS = 2000;
 export const MEDIA_POLL_HOVER_MS = 500;
+/** "Deep sleep": nothing touched the capsule for a while. */
+export const MEDIA_POLL_SLEEP_MS = 4000;
 
 /** System info (battery, CPU, RAM, volume) polling intervals, in ms. */
 export const SYSTEM_POLL_IDLE_MS = 5000;
 export const SYSTEM_POLL_EXPANDED_MS = 2000;
+export const SYSTEM_POLL_SLEEP_MS = 15000;
+
+/** The collapsed capsule falls into deep sleep after this long untouched. */
+export const DEEP_SLEEP_AFTER_MS = 3 * 60_000;
 
 /** File shelf limits. */
 export const SHELF_MAX_FILES = 3;
