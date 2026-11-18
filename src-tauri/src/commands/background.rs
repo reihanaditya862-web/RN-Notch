@@ -4,17 +4,14 @@
 //! The loops ease off while the capsule is off screen (a fullscreen app, or
 //! hidden from the tray), under battery saver, and while the session is
 //! locked. The frontend reports the first two through
-//! `set_background_paused`; the lock is checked here.
+//! `set_background_paused`; the lock comes from Windows' session events
+//! (see `events.rs`).
 
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use tauri::{AppHandle, Manager, State};
 use windows::Win32::System::Com::CoIncrementMTAUsage;
-use windows::Win32::System::StationsAndDesktops::{
-    CloseDesktop, DESKTOP_ACCESS_FLAGS, DESKTOP_CONTROL_FLAGS, GetUserObjectInformationW,
-    OpenInputDesktop, UOI_NAME,
-};
 
 use super::settings::{Features, SettingsState};
 
@@ -49,32 +46,10 @@ pub fn set_background_paused(state: State<'_, Background>, paused: bool) {
     state.paused.store(paused, Ordering::Relaxed);
 }
 
-/// True while the lock screen (or a UAC prompt) owns the input desktop.
-///
-/// A normal process cannot open the secure desktop at all, and on the
-/// interactive desktop the name is "Default".
+/// True while the session is locked. Windows reports lock and unlock to the
+/// hidden event window, so this is a cheap read, not a check of the desktop.
 pub fn is_session_locked() -> bool {
-    unsafe {
-        let Ok(desktop) = OpenInputDesktop(DESKTOP_CONTROL_FLAGS(0), false, DESKTOP_ACCESS_FLAGS(0))
-        else {
-            return true;
-        };
-        let mut name = [0u16; 64];
-        let mut needed = 0u32;
-        let read = GetUserObjectInformationW(
-            windows::Win32::Foundation::HANDLE(desktop.0),
-            UOI_NAME,
-            Some(name.as_mut_ptr().cast()),
-            (name.len() * 2) as u32,
-            Some(&mut needed),
-        );
-        let _ = CloseDesktop(desktop);
-        if read.is_err() {
-            return false;
-        }
-        let length = name.iter().position(|&c| c == 0).unwrap_or(name.len());
-        !String::from_utf16_lossy(&name[..length]).eq_ignore_ascii_case("Default")
-    }
+    super::events::session_locked()
 }
 
 /// Whether the loops should run at their slow pace now.

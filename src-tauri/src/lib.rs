@@ -318,6 +318,7 @@ struct CursorProbe {
 struct WatcherMemory {
     button_was_down: bool,
     was_hovering: bool,
+    was_watching: bool,
 }
 
 /// Reads the cursor straight from Win32. These calls are cheap and do not go
@@ -407,11 +408,20 @@ fn check_cursor(window: &WebviewWindow, hwnd: HWND, memory: &mut WatcherMemory) 
     let state = window.state::<ClickThroughState>();
     let watching = state.watch_outside_clicks.load(Ordering::Relaxed);
 
-    // Tracked on every step, so a button already held when watching starts
-    // is not mistaken for a new press.
-    let button_down = any_mouse_button_down();
-    let pressed = button_down && !memory.button_was_down;
-    memory.button_was_down = button_down;
+    // The mouse buttons are read only while outside clicks matter (a menu or
+    // settings is open). A background process that reads input state all the
+    // time looks like a keylogger to antivirus heuristics, and it is not
+    // needed otherwise. The first step after watching starts only takes the
+    // baseline, so a button already held then is not mistaken for a press.
+    let pressed = if watching {
+        let button_down = any_mouse_button_down();
+        let pressed = button_down && !memory.button_was_down && memory.was_watching;
+        memory.button_was_down = button_down;
+        pressed
+    } else {
+        false
+    };
+    memory.was_watching = watching;
 
     let regions = match state.regions.lock() {
         Ok(guard) => guard.clone(),

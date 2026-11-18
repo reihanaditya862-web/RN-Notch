@@ -7,8 +7,12 @@
 //! changes arrive through `NetworkInformation.NetworkStatusChanged` and
 //! Bluetooth connections through two `DeviceWatcher`s. Each event only wakes
 //! the loop that cares; the loops then read the new state themselves.
+//!
+//! The same window gets `WM_WTSSESSION_CHANGE`, which says when the session
+//! is locked and unlocked, so nothing has to poll for the lock screen.
 
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 
@@ -19,10 +23,12 @@ use windows::Networking::Connectivity::{NetworkInformation, NetworkStatusChanged
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::DataExchange::AddClipboardFormatListener;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::System::RemoteDesktop::{NOTIFY_FOR_THIS_SESSION, WTSRegisterSessionNotification};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, MSG, RegisterClassW,
     TranslateMessage, WINDOW_STYLE, WM_CLIPBOARDUPDATE, WM_DEVICECHANGE, WM_DISPLAYCHANGE,
-    WM_POWERBROADCAST, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    WM_POWERBROADCAST, WM_WTSSESSION_CHANGE, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    WTS_SESSION_LOCK, WTS_SESSION_UNLOCK,
 };
 use windows::core::w;
 
@@ -36,6 +42,13 @@ pub struct Wakeups {
 
 static HARDWARE: OnceLock<Sender<()>> = OnceLock::new();
 static CLIPBOARD: OnceLock<Sender<()>> = OnceLock::new();
+/// Whether the session is locked, as last reported by Windows.
+static LOCKED: AtomicBool = AtomicBool::new(false);
+
+/// True while the session is locked (the lock screen is up).
+pub fn session_locked() -> bool {
+    LOCKED.load(Ordering::Relaxed)
+}
 
 fn wake(channel: &OnceLock<Sender<()>>) {
     if let Some(sender) = channel.get() {
@@ -52,6 +65,11 @@ unsafe extern "system" fn window_proc(
     match message {
         WM_CLIPBOARDUPDATE => wake(&CLIPBOARD),
         WM_POWERBROADCAST | WM_DISPLAYCHANGE | WM_DEVICECHANGE => wake(&HARDWARE),
+        WM_WTSSESSION_CHANGE => match wparam.0 as u32 {
+            WTS_SESSION_LOCK => LOCKED.store(true, Ordering::Relaxed),
+            WTS_SESSION_UNLOCK => LOCKED.store(false, Ordering::Relaxed),
+            _ => {}
+        },
         _ => {}
     }
     unsafe { DefWindowProcW(window, message, wparam, lparam) }
@@ -122,6 +140,7 @@ fn run() {
             return;
         };
         let _ = AddClipboardFormatListener(window);
+        let _ = WTSRegisterSessionNotification(window, NOTIFY_FOR_THIS_SESSION);
 
         let mut message = MSG::default();
         while GetMessageW(&mut message, None, 0, 0).as_bool() {
