@@ -162,7 +162,7 @@ function WinnerAlert({ alert }: { alert: Alert }) {
         logo={winner.teamLogo}
         color={winner.teamColor}
         driver={winner.driver}
-        size={74}
+        size={68}
       />
       <span className="relative flex min-w-0 flex-1 flex-col gap-0.5 [text-shadow:0_1px_6px_rgb(0_0_0/0.65)]">
         <span

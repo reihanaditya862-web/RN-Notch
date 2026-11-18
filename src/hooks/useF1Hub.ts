@@ -13,6 +13,7 @@ import {
   teamColor,
 
 } from "../lib/f1";
+import { transparentLogo } from "../lib/logo";
 import { type F1Winner, useNotchStore } from "../stores/notchStore";
 
 const SCHEDULE_KEY = "rn-f1-schedule-v1";
@@ -74,6 +75,16 @@ async function fetchWikiImage(wikiTitle: string | null | undefined): Promise<str
   }
 }
 
+/** The logo with its background removed; the original when that fails. */
+async function withoutBackground(logo: string | null): Promise<string | null> {
+  if (!logo) return null;
+  try {
+    return await transparentLogo(logo);
+  } catch {
+    return logo;
+  }
+}
+
 function raceKey(race: { season: string; round: number }): string {
   return `${race.season}-${race.round}`;
 }
@@ -97,6 +108,14 @@ export function useF1Hub(enabled: boolean): void {
     if (cached?.races?.length) setF1({ f1Schedule: cached.races, f1Status: "ready" });
     const storedWinner = readJson<F1Winner>(WINNER_KEY);
     if (storedWinner) setF1({ f1Winner: storedWinner });
+    // A logo saved by an earlier version may still have its background.
+    if (storedWinner?.teamLogo && !storedWinner.logoTransparent) {
+      void withoutBackground(storedWinner.teamLogo).then((teamLogo) => {
+        const cleaned = { ...storedWinner, teamLogo, logoTransparent: true };
+        writeJson(WINNER_KEY, cleaned);
+        if (!disposed) setF1({ f1Winner: cleaned });
+      });
+    }
 
     const refreshSchedule = async () => {
       const latest = readJson<{ fetchedAt: number; races: F1Race[] }>(SCHEDULE_KEY);
@@ -143,7 +162,7 @@ export function useF1Hub(enabled: boolean): void {
         sameRace && known.photo ? known.photo : fetchWikiImage(result.driverWiki),
         sameRace && known.teamLogo ? known.teamLogo : fetchWikiImage(result.teamWiki),
       ]);
-      const winner = { ...result, photo, teamLogo };
+      const winner = { ...result, photo, teamLogo: await withoutBackground(teamLogo), logoTransparent: true };
       writeJson(WINNER_KEY, winner);
       if (!disposed) setF1({ f1Winner: winner });
       return winner;

@@ -9,16 +9,16 @@ export function TeamGlow({ color }: { color: string }) {
     <span
       aria-hidden="true"
       className="pointer-events-none absolute inset-0"
-      style={{ background: `linear-gradient(90deg, ${color}70 0%, ${color}24 42%, transparent 75%)` }}
+      style={{ background: `linear-gradient(90deg, ${color}66 0%, ${color}22 42%, transparent 75%)` }}
     />
   );
 }
 
 /**
- * The winner's portrait in front of the team logo: the photo as a rounded
- * square in the team colour, and behind it a larger, tilted card carrying
- * the logo that fades out to the right, into the capsule. The element is
- * wider than the photo, so the text beside it starts after the fade.
+ * The winner's portrait with the team logo behind it. The logo has no
+ * background of its own (see `lib/logo.ts`); it is drawn half again as tall
+ * as the photo, glows faintly in the team colour and fades out to the right
+ * and towards the capsule's edges, so it sits in the notch rather than on it.
  */
 export function WinnerHero({
   photo,
@@ -31,34 +31,39 @@ export function WinnerHero({
   logo: string | null;
   color: string;
   driver: string;
-  /** Side of the photo, in px; the logo card is about 1.4 times larger. */
+  /** Diameter of the photo, in px. */
   size: number;
 }) {
   return (
-    <span className="relative shrink-0" style={{ width: Math.round(size * 1.8), height: size }}>
+    <span className="relative shrink-0" style={{ width: Math.round(size * 1.3), height: size }}>
       {logo && (
-        <span
+        <img
+          src={logo}
+          alt=""
           aria-hidden="true"
-          className="pointer-events-none absolute flex items-center justify-center rounded-xl bg-white/95"
+          draggable={false}
+          className="pointer-events-none absolute top-1/2 w-auto max-w-none -translate-y-1/2 object-contain"
           style={{
-            left: Math.round(size * 0.45),
-            top: Math.round(-size * 0.2),
-            width: Math.round(size * 1.45),
-            height: Math.round(size * 1.15),
-            // The photo covers the card's left part; the logo sits in the rest.
-            padding: Math.round(size * 0.1),
-            paddingLeft: Math.round(size * 0.62),
-            transform: "rotate(-9deg)",
-            maskImage: "linear-gradient(90deg, #000 0%, #000 62%, transparent 100%)",
-            WebkitMaskImage: "linear-gradient(90deg, #000 0%, #000 62%, transparent 100%)",
+            left: Math.round(size * 0.3),
+            height: Math.round(size * 1.5),
+            maxWidth: Math.round(size * 3.4),
+            opacity: 0.55,
+            filter: `drop-shadow(0 0 ${Math.round(size * 0.12)}px ${color}99)`,
+            maskImage:
+              "linear-gradient(90deg, #000 0%, #000 40%, transparent 100%), linear-gradient(180deg, transparent 0%, #000 18%, #000 82%, transparent 100%)",
+            maskComposite: "intersect",
+            WebkitMaskComposite: "source-in",
           }}
-        >
-          <img src={logo} alt="" draggable={false} className="max-h-full max-w-full object-contain" />
-        </span>
+        />
       )}
       <span
-        className="relative z-10 flex items-center justify-center overflow-hidden rounded-xl shadow-[0_6px_18px_rgb(0_0_0/0.55)]"
-        style={{ width: size, height: size, backgroundColor: color }}
+        className="relative z-10 flex items-center justify-center overflow-hidden rounded-full"
+        style={{
+          width: size,
+          height: size,
+          backgroundColor: color,
+          boxShadow: `0 0 0 2px ${color}, 0 6px 18px rgb(0 0 0 / 0.55)`,
+        }}
       >
         {photo ? (
           <img src={photo} alt="" draggable={false} className="h-full w-full object-cover object-top" />

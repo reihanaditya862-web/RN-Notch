@@ -62,6 +62,8 @@ export interface PomodoroState {
 export interface F1Winner extends F1Result {
   photo: string | null;
   teamLogo: string | null;
+  /** The logo has had its background removed (see lib/logo.ts). */
+  logoTransparent?: boolean;
 }
 
 interface NotchStore extends StateInputs {
