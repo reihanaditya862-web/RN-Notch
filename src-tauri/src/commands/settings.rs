@@ -182,6 +182,8 @@ pub struct Features {
     pub f1_hub: bool,
     /// The current line of synced lyrics (LRCLIB) in place of the title.
     pub lyrics: bool,
+    /// A volume/brightness pill on the notch when either changes.
+    pub system_hud: bool,
 }
 
 impl Default for Features {
@@ -193,6 +195,7 @@ impl Default for Features {
             audio_mixer: true,
             f1_hub: true,
             lyrics: true,
+            system_hud: true,
         }
     }
 }
@@ -209,6 +212,10 @@ pub struct AppSettings {
     pub glow_end: HexColor,
     pub active_widgets: ActiveWidgets,
     pub dnd_enabled: bool,
+    /// The neon line and its glow along the edge of the capsule.
+    pub neon_border_enabled: bool,
+    /// The faint colour light inside the capsule; off leaves it solid black.
+    pub inner_gradient_enabled: bool,
     pub features: Features,
 }
 
@@ -222,6 +229,8 @@ impl Default for AppSettings {
             glow_end: GLOW_END_DEFAULT,
             active_widgets: ActiveWidgets::default(),
             dnd_enabled: false,
+            neon_border_enabled: true,
+            inner_gradient_enabled: true,
             features: Features::default(),
         }
     }
@@ -300,6 +309,14 @@ impl AppSettings {
                 .get("dnd_enabled")
                 .and_then(Value::as_bool)
                 .unwrap_or(defaults.dnd_enabled),
+            neon_border_enabled: root
+                .get("neon_border_enabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(defaults.neon_border_enabled),
+            inner_gradient_enabled: root
+                .get("inner_gradient_enabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(defaults.inner_gradient_enabled),
             features: Features {
                 notifications: feature("notifications", defaults.features.notifications),
                 hardware_alerts: feature("hardware_alerts", defaults.features.hardware_alerts),
@@ -310,6 +327,7 @@ impl AppSettings {
                 audio_mixer: feature("audio_mixer", defaults.features.audio_mixer),
                 f1_hub: feature("f1_hub", defaults.features.f1_hub),
                 lyrics: feature("lyrics", defaults.features.lyrics),
+                system_hud: feature("system_hud", defaults.features.system_hud),
             },
         }
         .sanitized()
@@ -623,8 +641,11 @@ mod tests {
                 ..Default::default()
             },
             dnd_enabled: true,
+            neon_border_enabled: false,
+            inner_gradient_enabled: false,
             features: Features {
                 f1_hub: false,
+                system_hud: false,
                 ..Default::default()
             },
         };

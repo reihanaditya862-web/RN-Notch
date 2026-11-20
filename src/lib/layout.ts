@@ -56,6 +56,8 @@ interface ShapeOptions {
   alertSize?: { width: number; height: number };
   /** Height of the dashboard for the page on show (see `dashboardHeight`). */
   dashboardHeight?: number;
+  /** Extra width of the collapsed capsule for a live activity beside the clock. */
+  activityWidth?: number;
 }
 
 /**
@@ -83,6 +85,7 @@ export function getNotchShape(
     isDrawerOpen = false,
     alertSize,
     dashboardHeight,
+    activityWidth = 0,
   }: ShapeOptions = {},
 ): NotchShape {
   const base = NOTCH_SIZES[state];
@@ -103,7 +106,7 @@ export function getNotchShape(
   }
 
   const isAlert = state === "alert";
-  const width = isAlert && alertSize ? alertSize.width : base.width;
+  const width = isAlert && alertSize ? alertSize.width : base.width + (isCollapsed ? activityWidth : 0);
   const height =
     isAlert && alertSize
       ? alertSize.height

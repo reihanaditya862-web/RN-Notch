@@ -2,13 +2,12 @@
 //! (`IAudioEndpointVolume`). The output device switch, microphone mute and
 //! per-app mixer live in `mixer.rs`.
 
-use std::ptr;
-
 use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
 use windows::Win32::Media::Audio::{IMMDeviceEnumerator, MMDeviceEnumerator, eMultimedia, eRender};
 use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
 
 use super::background::ensure_com;
+use super::hud::RN_NOTCH_AUDIO_CONTEXT;
 
 /// Master volume snapshot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,12 +72,12 @@ pub fn set_volume(level: u8) -> Result<(), String> {
 
     unsafe {
         endpoint
-            .SetMasterVolumeLevelScalar(percent_to_scalar(level), ptr::null())
+            .SetMasterVolumeLevelScalar(percent_to_scalar(level), &RN_NOTCH_AUDIO_CONTEXT)
             .map_err(|error| describe("set the volume", error))?;
 
         if level > 0 && endpoint.GetMute().map(|muted| muted.as_bool()).unwrap_or(false) {
             endpoint
-                .SetMute(false, ptr::null())
+                .SetMute(false, &RN_NOTCH_AUDIO_CONTEXT)
                 .map_err(|error| describe("unmute", error))?;
         }
     }
@@ -96,7 +95,7 @@ pub fn toggle_mute() -> Result<bool, String> {
             .map_err(|error| describe("read the mute state", error))?
             .as_bool();
         endpoint
-            .SetMute(!muted, ptr::null())
+            .SetMute(!muted, &RN_NOTCH_AUDIO_CONTEXT)
             .map_err(|error| describe("toggle mute", error))?;
         Ok(!muted)
     }

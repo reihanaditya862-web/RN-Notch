@@ -17,6 +17,9 @@ import {
   RotateCcw,
   Scaling,
   SlidersHorizontal,
+  Sparkles,
+  SunMoon,
+  Volume2,
   Wifi,
   X,
 } from "lucide-react";
@@ -290,6 +293,7 @@ const FEATURES: Array<{ key: keyof Features; label: string; icon: ReactNode }> =
   { key: "audio_mixer", label: "Audio mixer", icon: <SlidersHorizontal size={14} strokeWidth={1.5} /> },
   { key: "f1_hub", label: "F1 Race Hub", icon: <Flag size={14} strokeWidth={1.5} /> },
   { key: "lyrics", label: "Live lyrics", icon: <MicVocal size={14} strokeWidth={1.5} /> },
+  { key: "system_hud", label: "System HUD", icon: <Volume2 size={14} strokeWidth={1.5} /> },
 ];
 
 type NotificationAccess = "allowed" | "denied" | "unspecified" | "unavailable";
@@ -363,6 +367,7 @@ function GeneralTab() {
   const setDisplayMode = useNotchStore((store) => store.setDisplayMode);
   const setOpacity = useNotchStore((store) => store.setOpacity);
   const setScale = useNotchStore((store) => store.setScale);
+  const setVisualEffect = useNotchStore((store) => store.setVisualEffect);
 
   const opacityPercent = Math.round(settings.opacity * 100);
   const opacityMin = Math.round(OPACITY_MIN * 100);
@@ -441,6 +446,21 @@ function GeneralTab() {
       </label>
 
       <GlowColors />
+
+      <div role="group" aria-label="Capsule effects" className="grid grid-cols-2 gap-1.5">
+        <ToggleRow
+          icon={<Sparkles size={14} strokeWidth={1.5} />}
+          label="Neon border"
+          isOn={settings.neon_border_enabled}
+          onChange={(isOn) => setVisualEffect("neon_border_enabled", isOn)}
+        />
+        <ToggleRow
+          icon={<SunMoon size={14} strokeWidth={1.5} />}
+          label="Inner glow"
+          isOn={settings.inner_gradient_enabled}
+          onChange={(isOn) => setVisualEffect("inner_gradient_enabled", isOn)}
+        />
+      </div>
     </>
   );
 }
@@ -494,7 +514,8 @@ function ModulesTab() {
 
 /**
  * Settings panel, shown inside the capsule (420x380), in two tabs:
- * - General: display mode, size, opacity and the glow colours.
+ * - General: display mode, size, opacity, the glow colours, and switches
+ *   for the neon border and the inner glow.
  * - Modules: which widgets and modules are on, Do Not Disturb and Start
  *   with Windows. A module switched off also stops its background work.
  *

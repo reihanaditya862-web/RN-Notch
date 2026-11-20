@@ -9,9 +9,14 @@ import {
   Copy,
   Flag,
   Monitor,
+  Sun,
+  SunDim,
   Timer,
   TriangleExclamationPoint,
   Video,
+  Volume1,
+  Volume2,
+  VolumeX,
   Wifi,
   WifiOff,
   X,
@@ -20,6 +25,7 @@ import {
 import { motion } from "framer-motion";
 import type { Alert, AlertIcon, AlertSymbol } from "../lib/alerts";
 import { useNotchStore } from "../stores/notchStore";
+import { DigitText } from "./widgets/DigitText";
 import { F1LaunchAnimation } from "./widgets/F1LaunchAnimation";
 import { TeamGlow, WinnerHero } from "./widgets/TeamLogo";
 
@@ -149,6 +155,45 @@ function StandardAlert({ alert }: { alert: Alert }) {
   );
 }
 
+/**
+ * Volume or brightness, the way the keys changed it: icon, a thin bar that
+ * fills with `scaleX` (compositor only) and the percentage in Formula1.
+ */
+function HudAlert({ alert }: { alert: Alert }) {
+  const hud = alert.hud;
+  if (!hud) return null;
+  const level = hud.muted ? 0 : hud.level;
+  const Icon =
+    hud.kind === "volume"
+      ? level === 0
+        ? VolumeX
+        : level < 50
+          ? Volume1
+          : Volume2
+      : level < 50
+        ? SunDim
+        : Sun;
+
+  return (
+    <div className="flex h-full w-full items-center gap-3 px-4">
+      <Icon size={16} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-notch-primary" />
+      <span className="sr-only">{hud.muted ? `${alert.title} muted` : `${alert.title} ${level}%`}</span>
+      <span aria-hidden="true" className="relative h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-white/15">
+        <span
+          className="absolute inset-0 origin-left rounded-full bg-notch-primary transition-transform duration-150 ease-out"
+          style={{ transform: `scaleX(${level / 100})` }}
+        />
+      </span>
+      <span
+        aria-hidden="true"
+        className="w-9 shrink-0 text-right font-display text-[12px] leading-none font-bold text-notch-primary"
+      >
+        {hud.muted ? <span className="text-notch-tertiary">-</span> : <DigitText text={String(level)} />}
+      </span>
+    </div>
+  );
+}
+
 /** Race result: the winner's portrait, name, Grand Prix and team colour. */
 function WinnerAlert({ alert }: { alert: Alert }) {
   const winner = alert.winner;
@@ -214,7 +259,9 @@ function SessionAlert({ alert }: { alert: Alert }) {
 export function AlertView({ alert }: { alert: Alert }) {
   return (
     <div role="status" aria-live="polite" className="h-full w-full">
-      {alert.winner ? (
+      {alert.hud ? (
+        <HudAlert alert={alert} />
+      ) : alert.winner ? (
         <WinnerAlert alert={alert} />
       ) : alert.session ? (
         <SessionAlert alert={alert} />
@@ -231,7 +278,7 @@ export function AlertView({ alert }: { alert: Alert }) {
  * doing exactly as it was.
  */
 export function AlertBanner({ alert }: { alert: Alert }) {
-  const height = alert.winner ? 92 : alert.session ? 68 : 48;
+  const height = alert.winner ? 92 : alert.session ? 68 : alert.hud ? 40 : 48;
   return (
     <motion.div
       key={alert.id}

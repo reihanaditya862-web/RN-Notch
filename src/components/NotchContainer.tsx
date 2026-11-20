@@ -31,6 +31,9 @@ import { useHoverDelay } from "../hooks/useHoverDelay";
 import { useLyrics } from "../hooks/useLyrics";
 import { useMediaSession } from "../hooks/useMediaSession";
 import { useNativeEvents } from "../hooks/useNativeEvents";
+import { useSystemHud } from "../hooks/useSystemHud";
+import { useLiveActivity } from "../hooks/useLiveActivity";
+import { LIVE_ACTIVITY_WIDTH, LiveActivityPill } from "./widgets/LiveActivityPill";
 import { usePomodoro } from "../hooks/usePomodoro";
 import { saveSettingsNow, useSettingsSync } from "../hooks/useSettingsSync";
 import { useSystemInfo } from "../hooks/useSystemInfo";
@@ -322,6 +325,10 @@ export function NotchContainer() {
   const chosenPage = useNotchStore((store) => store.dashboardPage);
   const pageHeight = dashboardHeight(currentPage(dashboardPages(settings), chosenPage).id, settings);
 
+  // A recording, the focus timer or a routine due soon, beside the clock.
+  const liveActivity = useLiveActivity();
+  const activityWidth = liveActivity ? LIVE_ACTIVITY_WIDTH : 0;
+
   // Width, height and position come from this one place.
   const shape = useMemo(
     () =>
@@ -331,13 +338,15 @@ export function NotchContainer() {
         isDrawerOpen,
         alertSize: alertDimensions,
         dashboardHeight: pageHeight,
+        activityWidth,
       }),
-    [state, settings, wantsRetract, uiScale, isDrawerOpen, alertDimensions, pageHeight],
+    [state, settings, wantsRetract, uiScale, isDrawerOpen, alertDimensions, pageHeight, activityWidth],
   );
 
   useSettingsSync();
   useForegroundState();
   useNativeEvents();
+  useSystemHud();
   usePomodoro();
   useF1Hub(isReady && settings.features.f1_hub);
   const { isBatterySaver, scalePoll } = useBatterySaver();
@@ -798,6 +807,7 @@ export function NotchContainer() {
             lyric={lyric}
             trailing={
               <>
+                {liveActivity && <LiveActivityPill activity={liveActivity} isInteractive />}
                 <ClockDisplay />
                 <BatteryIndicator />
               </>
@@ -808,6 +818,7 @@ export function NotchContainer() {
       </div>
     ) : (
       <IdleView
+        activity={liveActivity}
         media={state === "idleMedia" ? media : null}
         isDndEnabled={settings.dnd_enabled}
         lyric={lyric}
@@ -885,22 +896,25 @@ export function NotchContainer() {
             style={{ transition: "fill 200ms ease" }}
           />
           {/*
-            Soft glow behind the neon line; removed under battery saver.
-            After a pop-in it pulses once: the key remounts the path, which
-            restarts the one-shot `notch-landing` animation.
+            Soft glow behind the neon line; removed under battery saver and
+            when the neon border is off in Settings. After a pop-in it pulses
+            once: the key remounts the path, which restarts the one-shot
+            `notch-landing` animation.
           */}
-          <motion.path
-            key={landingCount}
-            d={strokePath}
-            fill="none"
-            stroke={`url(#${neonGradientId})`}
-            strokeWidth="3"
-            opacity={isActive ? 0.5 : 0}
-            className={[
-              "notch-outline notch-outline-glow",
-              landingCount > 0 ? "notch-landing" : "",
-            ].join(" ")}
-          />
+          {settings.neon_border_enabled && (
+            <motion.path
+              key={landingCount}
+              d={strokePath}
+              fill="none"
+              stroke={`url(#${neonGradientId})`}
+              strokeWidth="3"
+              opacity={isActive ? 0.5 : 0}
+              className={[
+                "notch-outline notch-outline-glow",
+                landingCount > 0 ? "notch-landing" : "",
+              ].join(" ")}
+            />
+          )}
           <motion.path
             d={strokePath}
             fill="none"
@@ -908,14 +922,17 @@ export function NotchContainer() {
             strokeWidth={BORDER_WIDTH}
             className="notch-outline"
           />
-          <motion.path
-            d={strokePath}
-            fill="none"
-            stroke={`url(#${neonGradientId})`}
-            strokeWidth={BORDER_WIDTH}
-            opacity={isActive ? 0.9 : 0}
-            className="notch-outline"
-          />
+          {/* The neon line itself; off in Settings leaves only the hairline. */}
+          {settings.neon_border_enabled && (
+            <motion.path
+              d={strokePath}
+              fill="none"
+              stroke={`url(#${neonGradientId})`}
+              strokeWidth={BORDER_WIDTH}
+              opacity={isActive ? 0.9 : 0}
+              className="notch-outline"
+            />
+          )}
           {/* The focus timer's progress, running along the same edge. */}
           <PomodoroRing path={strokePath} />
         </svg>
@@ -926,35 +943,38 @@ export function NotchContainer() {
           right, at 16% so the black stays black. It fills the capsule's own
           outline, so in notch mode one gradient runs from ear tip to ear tip
           instead of stopping at the body. It breathes while music plays.
+          Switched off in Settings, the capsule is plain black inside.
         */}
-        <svg
-          width="1"
-          height="1"
-          aria-hidden="true"
-          className={[
-            "pointer-events-none absolute top-0 left-0 overflow-visible",
-            isMediaPlaying && !settings.dnd_enabled ? "notch-ambient-breathing" : "",
-          ].join(" ")}
-        >
-          <defs>
-            <radialGradient id={glowStartId} cx="0" cy="0" r="1" gradientTransform="scale(1.2 1.7)">
-              <stop offset="0" stopColor={settings.glow_start} stopOpacity="0.16" />
-              <stop offset="0.62" stopColor={settings.glow_start} stopOpacity="0" />
-            </radialGradient>
-            <radialGradient
-              id={glowEndId}
-              cx="0"
-              cy="0"
-              r="1"
-              gradientTransform="translate(1 1) scale(1.2 1.7)"
-            >
-              <stop offset="0" stopColor={settings.glow_end} stopOpacity="0.16" />
-              <stop offset="0.62" stopColor={settings.glow_end} stopOpacity="0" />
-            </radialGradient>
-          </defs>
-          <motion.path d={fillPath} fill={`url(#${glowEndId})`} />
-          <motion.path d={fillPath} fill={`url(#${glowStartId})`} />
-        </svg>
+        {settings.inner_gradient_enabled && (
+          <svg
+            width="1"
+            height="1"
+            aria-hidden="true"
+            className={[
+              "pointer-events-none absolute top-0 left-0 overflow-visible",
+              isMediaPlaying && !settings.dnd_enabled ? "notch-ambient-breathing" : "",
+            ].join(" ")}
+          >
+            <defs>
+              <radialGradient id={glowStartId} cx="0" cy="0" r="1" gradientTransform="scale(1.2 1.7)">
+                <stop offset="0" stopColor={settings.glow_start} stopOpacity="0.16" />
+                <stop offset="0.62" stopColor={settings.glow_start} stopOpacity="0" />
+              </radialGradient>
+              <radialGradient
+                id={glowEndId}
+                cx="0"
+                cy="0"
+                r="1"
+                gradientTransform="translate(1 1) scale(1.2 1.7)"
+              >
+                <stop offset="0" stopColor={settings.glow_end} stopOpacity="0.16" />
+                <stop offset="0.62" stopColor={settings.glow_end} stopOpacity="0" />
+              </radialGradient>
+            </defs>
+            <motion.path d={fillPath} fill={`url(#${glowEndId})`} />
+            <motion.path d={fillPath} fill={`url(#${glowStartId})`} />
+          </svg>
+        )}
 
         {/*
           Drop shadow of the raised capsule. The shadow itself never changes;

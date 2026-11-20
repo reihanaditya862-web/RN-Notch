@@ -6,6 +6,7 @@ pub mod clipboard;
 pub mod events;
 pub mod hardware;
 pub mod http;
+pub mod hud;
 pub mod icons;
 pub mod media;
 pub mod mixer;

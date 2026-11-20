@@ -25,7 +25,7 @@ use commands::settings::{self, SETTINGS_DIR, SETTINGS_FILE, SettingsState};
 use commands::system::{self, SystemState};
 use commands::window_detector::{self, ForegroundWatch};
 use commands::{
-    apps, audio, autostart, clipboard, events, hardware, http, mixer, picker, screen_tools,
+    apps, audio, autostart, clipboard, events, hardware, http, hud, mixer, picker, screen_tools,
 };
 
 /// Name shown to the user (tray tooltip, menu texts).
@@ -504,6 +504,7 @@ pub fn run() {
             picker::pixel_at_cursor,
             picker::finish_color_pick,
             screen_tools::launch_snip,
+            screen_tools::snipping_tool_status,
             screen_tools::start_file_drag,
             apps::ai_shortcuts,
             apps::launch_ai,
@@ -553,6 +554,7 @@ pub fn run() {
                 ("hardware", hardware::spawn_watcher(app.handle().clone(), hardware_wake)),
                 ("clipboard", clipboard::spawn_watcher(app.handle().clone(), clipboard_wake)),
                 ("media", media::spawn_event_watcher(app.handle().clone())),
+                ("system HUD", hud::spawn_watchers(app.handle().clone())),
             ] {
                 if let Err(error) = started {
                     eprintln!("could not start the {name} watcher: {error}");

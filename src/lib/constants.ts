@@ -93,6 +93,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   glow_end: GLOW_END_DEFAULT,
   active_widgets: { media: true, system: true, file_shelf: true, scratchpad: true },
   dnd_enabled: false,
+  neon_border_enabled: true,
+  inner_gradient_enabled: true,
   features: {
     notifications: true,
     hardware_alerts: true,
@@ -100,6 +102,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     audio_mixer: true,
     f1_hub: true,
     lyrics: true,
+    system_hud: true,
   },
 };
 
@@ -156,28 +159,26 @@ export const SPRING_ENTRANCE: Transition = {
 export const ENTRANCE_OFFSET_Y = -30;
 export const ENTRANCE_SCALE_KEYFRAMES = [0.85, 1.05, 1];
 
-/** Growing: a touch of overshoot, settles quickly. */
+/**
+ * Opening and closing are deliberately asymmetric. Growing (the hover pill,
+ * a pop-up, the dashboard) takes 280 ms on a curve that shoots out and eases
+ * long into place; shrinking takes 190 ms on a standard curve with no
+ * settle, so the capsule gets out of the way as soon as the cursor leaves.
+ */
 export const SPRING_EXPAND: Transition = {
-  type: "spring",
-  stiffness: 400,
-  damping: 30,
-  mass: 0.8,
+  type: "tween",
+  duration: 0.28,
+  ease: [0.22, 1, 0.36, 1],
 };
 
-/** Opening the dashboard: slightly softer, it travels further. */
-export const SPRING_EXPANDED: Transition = {
-  type: "spring",
-  stiffness: 350,
-  damping: 28,
-  mass: 0.8,
-};
+/** Opening the dashboard: the same curve as any other growth. */
+export const SPRING_EXPANDED: Transition = SPRING_EXPAND;
 
-/** Shrinking: lighter mass, so collapsing is faster than expanding. */
+/** Shrinking back: quicker, without the long settle. */
 export const SPRING_COLLAPSE: Transition = {
-  type: "spring",
-  stiffness: 500,
-  damping: 35,
-  mass: 0.6,
+  type: "tween",
+  duration: 0.19,
+  ease: [0.4, 0, 0.2, 1],
 };
 
 /** Used instead of the springs when the OS asks for reduced motion. */

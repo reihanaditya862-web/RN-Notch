@@ -6,12 +6,13 @@
 //! Win+Shift+R for a recording. The command then waits while Snipping Tool's
 //! overlay is in front, so the frontend can keep the capsule out of the shot.
 
-use std::sync::mpsc;
+use std::sync::{Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use tauri::WebviewWindow;
-use windows::Win32::Foundation::{CloseHandle, HWND};
+use serde::Serialize;
+use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM};
 use windows::Win32::System::Ole::{DROPEFFECT_COPY, DROPEFFECT_LINK};
 use windows::Win32::System::Threading::{
     OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
@@ -21,9 +22,11 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VIRTUAL_KEY, VK_LWIN, VK_SHIFT,
 };
 use windows::Win32::UI::Shell::{BHID_DataObject, IShellItem, SHCreateItemFromParsingName, SHDoDragDrop};
-use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+use windows::Win32::UI::WindowsAndMessaging::{
+    EnumWindows, GetForegroundWindow, GetWindowThreadProcessId, IsWindowVisible,
+};
 use windows::Win32::System::Com::IDataObject;
-use windows::core::{HSTRING, PWSTR};
+use windows::core::{BOOL, HSTRING, PWSTR};
 
 /// Programs that draw Snipping Tool's capture overlay.
 const SNIPPING_PROCESSES: [&str; 2] = ["screenclippinghost.exe", "snippingtool.exe"];
@@ -109,6 +112,68 @@ fn snipping_in_front() -> bool {
     foreground_program().is_some_and(|name| SNIPPING_PROCESSES.contains(&name.as_str()))
 }
 
+/// The Snipping Tool processes seen running the last overlay RN Notch opened.
+static SNIPPING_PIDS: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+
+/// Remembers the process in front while it is Snipping Tool.
+fn remember_snipping_process() {
+    let pid = unsafe {
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(GetForegroundWindow(), Some(&mut pid));
+        pid
+    };
+    if let Ok(mut pids) = SNIPPING_PIDS.lock()
+        && pid != 0
+        && !pids.contains(&pid)
+    {
+        pids.push(pid);
+    }
+}
+
+unsafe extern "system" fn find_visible_window(window: HWND, found: LPARAM) -> BOOL {
+    // SAFETY: `found` points at the `Search` that `snipping_tool_status` keeps alive.
+    let search = unsafe { &mut *(found.0 as *mut Search) };
+    let mut pid = 0u32;
+    unsafe { GetWindowThreadProcessId(window, Some(&mut pid)) };
+    if search.pids.contains(&pid) && unsafe { IsWindowVisible(window) }.as_bool() {
+        search.found = true;
+        return BOOL(0);
+    }
+    BOOL(1)
+}
+
+struct Search {
+    pids: Vec<u32>,
+    found: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnippingStatus {
+    /// Snipping Tool is the app in front.
+    in_front: bool,
+    /// The Snipping Tool that opened the last overlay still shows a window
+    /// (the recording toolbar, or its editor).
+    has_window: bool,
+}
+
+/// Where Snipping Tool stands while a recording RN Notch started may run. The
+/// user works in other apps meanwhile; Snipping Tool comes back to the front
+/// when its toolbar is used to stop the recording, and has no window left
+/// when the area selection was cancelled.
+#[tauri::command]
+pub fn snipping_tool_status() -> SnippingStatus {
+    let pids = SNIPPING_PIDS.lock().map(|pids| pids.clone()).unwrap_or_default();
+    let mut search = Search { pids, found: false };
+    if !search.pids.is_empty() {
+        let _ = unsafe { EnumWindows(Some(find_visible_window), LPARAM(&mut search as *mut Search as isize)) };
+    }
+    SnippingStatus {
+        in_front: snipping_in_front(),
+        has_window: search.found,
+    }
+}
+
 /// Starts a snip ("screenshot") or a recording ("record") and returns once
 /// Snipping Tool's overlay has closed again (the user picked an area or
 /// cancelled). Fails when Snipping Tool did not open.
@@ -119,6 +184,9 @@ pub fn launch_snip(kind: String) -> Result<(), String> {
         "record" => b'R',
         _ => return Err(format!("unknown capture kind '{kind}'")),
     };
+    if let Ok(mut pids) = SNIPPING_PIDS.lock() {
+        pids.clear();
+    }
     press_win_shift(letter)?;
 
     let started = Instant::now();
@@ -129,6 +197,7 @@ pub fn launch_snip(kind: String) -> Result<(), String> {
         thread::sleep(WATCH_INTERVAL);
     }
     while snipping_in_front() && started.elapsed() < OVERLAY_MAX_DURATION {
+        remember_snipping_process();
         thread::sleep(WATCH_INTERVAL);
     }
     Ok(())

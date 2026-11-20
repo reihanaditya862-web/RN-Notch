@@ -2,12 +2,13 @@ import { ALERT_DURATION_MS, NOTCH_SIZES } from "./constants";
 import type { AppNotification, HardwareAlert } from "./types";
 
 /**
- * Short-lived pop-ups, ordered by importance:
+ * Short-lived pop-ups, ordered by importance: the volume/brightness HUD >
  * hardware (battery, Wi-Fi...) > notifications > F1 > toasts (a copied colour).
  */
-export type AlertKind = "hardware" | "notification" | "f1" | "toast";
+export type AlertKind = "hud" | "hardware" | "notification" | "f1" | "toast";
 
 export const ALERT_PRIORITY: Record<AlertKind, number> = {
+  hud: 5,
   hardware: 4,
   notification: 3,
   f1: 2,
@@ -56,6 +57,17 @@ export interface F1SessionCard {
   minutesLeft: number;
 }
 
+/** A volume or brightness change reported by Windows (see `hud.rs`). */
+export interface HudReading {
+  kind: "volume" | "brightness";
+  /** 0-100. */
+  level: number;
+  muted: boolean;
+}
+
+/** How long the HUD stays after the last change. */
+export const HUD_DURATION_MS = 1500;
+
 export interface Alert {
   id: string;
   kind: AlertKind;
@@ -71,6 +83,8 @@ export interface Alert {
   /** Pop-ups with their own layout. */
   winner: F1WinnerCard | null;
   session: F1SessionCard | null;
+  /** The volume/brightness pill; `revision` counts in-place updates. */
+  hud: (HudReading & { revision: number }) | null;
   createdAt: number;
 }
 
@@ -93,6 +107,7 @@ function base(kind: AlertKind, title: string, body: string, durationMs: number):
     openAppId: null,
     winner: null,
     session: null,
+    hud: null,
     createdAt: Date.now(),
   };
 }
@@ -147,6 +162,15 @@ export function sessionAlert(card: F1SessionCard): Alert {
   };
 }
 
+export function hudAlert(reading: HudReading): Alert {
+  const title = reading.kind === "volume" ? "Volume" : "Brightness";
+  const level = Math.round(Math.min(100, Math.max(0, reading.level)));
+  return {
+    ...base("hud", title, reading.muted ? "Muted" : `${level}%`, HUD_DURATION_MS),
+    hud: { ...reading, level, revision: 0 },
+  };
+}
+
 /** Higher priority first; within a priority, the older one first. */
 export function compareAlerts(a: Alert, b: Alert): number {
   return ALERT_PRIORITY[b.kind] - ALERT_PRIORITY[a.kind] || a.createdAt - b.createdAt;
@@ -183,6 +207,7 @@ const ALERT_CHROME_WIDTH = 14 + 30 + 10 + 22 + 14;
 export function alertSize(alert: Alert): { width: number; height: number } {
   if (alert.winner) return { width: 400, height: 100 };
   if (alert.session) return { width: 400, height: 76 };
+  if (alert.hud) return { width: 280, height: 40 };
 
   const text = Math.max(
     textWidth(alert.source ? `${alert.title}  ${alert.source}` : alert.title, ALERT_TITLE_FONT),

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Check, Pencil, Plus, Trash, X } from "lucide-react";
 import { useSchedules } from "../../hooks/useSchedules";
 import type { ScheduleItem } from "../../lib/types";
+import { CustomTimePicker } from "../widgets/CustomTimePicker";
 import { DigitText } from "../widgets/DigitText";
 import { FOCUS_RING, PageHeader } from "./PageHeader";
 
@@ -82,7 +83,7 @@ function DayToggle({
       aria-label={SHORT[day]}
       onClick={onToggle}
       className={[
-        "h-[22px] w-[22px] shrink-0 rounded-md text-[10px] leading-none font-semibold transition-colors duration-100",
+        "h-[22px] w-[22px] shrink-0 rounded-md font-display text-[10px] leading-none font-bold transition-colors duration-100",
         FOCUS_RING,
         isOn ? "bg-notch-primary text-black" : "bg-notch-surface text-notch-secondary hover:text-notch-primary",
       ].join(" ")}
@@ -301,20 +302,11 @@ export function CalendarPage({ onCollapse }: { onCollapse: () => void }) {
           event.preventDefault();
           submit();
         }}
-        className="flex shrink-0 flex-col gap-1"
+        className="flex shrink-0 flex-col gap-2"
         aria-label={draft.id ? "Edit routine" : "New routine"}
       >
-        <div className="flex h-7 items-center gap-1.5">
-          <input
-            type="time"
-            value={draft.time}
-            onChange={(event) => {
-              const time = event.currentTarget.value;
-              setDraft((current) => ({ ...current, time }));
-            }}
-            aria-label="Time"
-            className="h-7 w-[74px] shrink-0 rounded-lg border border-transparent bg-notch-surface px-1.5 font-mono text-[11px] text-notch-primary [color-scheme:dark] outline-none focus:border-notch-border-active"
-          />
+        <div className="flex h-7 items-center gap-2.5">
+          <CustomTimePicker value={draft.time} onChange={(time) => setDraft((current) => ({ ...current, time }))} />
           <input
             type="text"
             value={draft.title}
@@ -362,7 +354,7 @@ export function CalendarPage({ onCollapse }: { onCollapse: () => void }) {
               onClick={() => setDraft((current) => ({ ...current, days: preset.days }))}
               aria-pressed={sameDays(preset.days, draft.days)}
               className={[
-                "h-[22px] shrink-0 rounded-md px-2 text-[10px] leading-none font-medium transition-colors duration-100",
+                "h-[22px] shrink-0 rounded-md px-2 font-display text-[11px] leading-none font-bold transition-colors duration-100",
                 FOCUS_RING,
                 sameDays(preset.days, draft.days)
                   ? "bg-notch-surface-hover text-notch-primary"

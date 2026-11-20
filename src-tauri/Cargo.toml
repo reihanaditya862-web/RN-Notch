@@ -77,6 +77,8 @@ windows = { version = "0.62", features = [
     "Win32_Devices_Properties",
     # Is the session locked? (background loops ease off)
     "Win32_System_RemoteDesktop",
+    "Win32_System_Rpc",
+    "Win32_System_Wmi",
     # Hidden window that receives clipboard, power and display broadcasts
     "Win32_System_LibraryLoader",
 ] }

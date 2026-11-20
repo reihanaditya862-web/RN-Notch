@@ -14,7 +14,9 @@ export function useAlertTimer(alert: Alert | null, isPaused: boolean): void {
 
   useEffect(() => {
     if (!alert) return;
-    if (remaining.current?.id !== alert.id) remaining.current = { id: alert.id, ms: alert.durationMs };
+    // An updated HUD (the volume moved again) starts its time over.
+    const key = alert.hud ? `${alert.id}#${alert.hud.revision}` : alert.id;
+    if (remaining.current?.id !== key) remaining.current = { id: key, ms: alert.durationMs };
     if (isPaused) return;
 
     const started = Date.now();
@@ -22,7 +24,7 @@ export function useAlertTimer(alert: Alert | null, isPaused: boolean): void {
     const timer = window.setTimeout(() => useNotchStore.getState().dismissAlert(alert.id), left);
     return () => {
       window.clearTimeout(timer);
-      if (remaining.current?.id === alert.id) remaining.current.ms = left - (Date.now() - started);
+      if (remaining.current?.id === key) remaining.current.ms = left - (Date.now() - started);
     };
   }, [alert, isPaused]);
 }

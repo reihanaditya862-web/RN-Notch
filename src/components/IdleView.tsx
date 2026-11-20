@@ -1,8 +1,10 @@
 import { Moon } from "lucide-react";
+import type { LiveActivity } from "../hooks/useLiveActivity";
 import type { MediaInfo } from "../lib/types";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { BatteryIndicator } from "./widgets/BatteryIndicator";
 import { ClockDisplay } from "./widgets/ClockDisplay";
+import { LiveActivityPill } from "./widgets/LiveActivityPill";
 import { LyricLine } from "./widgets/LyricLine";
 import { MediaWaveform } from "./widgets/MediaWaveform";
 
@@ -13,6 +15,8 @@ interface IdleViewProps {
   isDndEnabled: boolean;
   /** The lyric line being sung; shown instead of the title when not null. */
   lyric?: string | null;
+  /** A recording, the focus timer or a routine due soon, shown before the clock. */
+  activity?: LiveActivity | null;
 }
 
 /** Purple dot + moon: the capsule will not open or widen by itself. */
@@ -35,8 +39,10 @@ function DndIndicator() {
  *
  * - No media: clock on the left, battery on the right.
  * - Media playing: waveform and song title, then clock and battery.
+ * A live activity sits just before the clock; the capsule widens for it.
  */
-export function IdleView({ media, isDndEnabled, lyric = null }: IdleViewProps) {
+export function IdleView({ media, isDndEnabled, lyric = null, activity = null }: IdleViewProps) {
+  const pill = activity ? <LiveActivityPill activity={activity} /> : null;
   const clock = (
     <ErrorBoundary label="Clock" fallback={null}>
       <ClockDisplay />
@@ -51,7 +57,10 @@ export function IdleView({ media, isDndEnabled, lyric = null }: IdleViewProps) {
   if (!media) {
     return (
       <div className="flex h-full w-full items-center justify-between px-3">
-        {clock}
+        <span className="flex items-center gap-2">
+          {pill}
+          {clock}
+        </span>
         <span className="flex items-center gap-2">
           {isDndEnabled && <DndIndicator />}
           {battery}
@@ -76,6 +85,7 @@ export function IdleView({ media, isDndEnabled, lyric = null }: IdleViewProps) {
           {media.title}
         </span>
       )}
+      {pill}
       {clock}
       {battery}
     </div>

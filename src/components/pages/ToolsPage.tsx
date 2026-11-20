@@ -59,12 +59,8 @@ async function capture(kind: "screenshot" | "record"): Promise<void> {
       ),
     );
   } else if (kind === "record") {
-    after.pushAlert(
-      toastAlert("Recording with Snipping Tool", "Stop it from Snipping Tool's toolbar", {
-        type: "symbol",
-        name: "record",
-      }),
-    );
+    // The live activity beside the clock shows it until Snipping Tool stops.
+    after.setRecording({ startedAt: Date.now() });
   }
 }
 

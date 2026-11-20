@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { type Alert, compareAlerts, isDuplicate } from "../lib/alerts";
+import { type Alert, type HudReading, compareAlerts, hudAlert, isDuplicate } from "../lib/alerts";
 import {
   ALERT_QUEUE_LIMIT,
   CLIPBOARD_MAX_CHARS,
@@ -118,6 +118,8 @@ interface NotchStore extends StateInputs {
   f1Schedule: F1Race[] | null;
   f1Status: "idle" | "loading" | "ready" | "error";
   f1Winner: F1Winner | null;
+  /** A Snipping Tool recording RN Notch started, while it runs. */
+  recording: { startedAt: number } | null;
 
   /**
    * Queues a pop-up. Dropped while the capsule is off screen, and under Do
@@ -125,6 +127,15 @@ interface NotchStore extends StateInputs {
    */
   pushAlert: (alert: Alert) => void;
   dismissAlert: (id: string) => void;
+  /**
+   * Shows the volume/brightness pill at once, ahead of anything waiting. A
+   * pill already on screen for the same reading is updated in place (its
+   * timer starts again), so holding a volume key never stacks pop-ups.
+   */
+  showHud: (hud: HudReading) => void;
+  setRecording: (recording: { startedAt: number } | null) => void;
+  /** Switches the neon border or the inner gradient (Settings). */
+  setVisualEffect: (effect: "neon_border_enabled" | "inner_gradient_enabled", on: boolean) => void;
   /** Drops every pop-up (the capsule went off screen; they would be stale later). */
   clearAlerts: () => void;
   setDrawerOpen: (open: boolean) => void;
@@ -232,6 +243,8 @@ function admitsAlert(alert: Alert, store: NotchStore): boolean {
   if (alert.kind === "notification" && !settings.features.notifications) return false;
   if (alert.kind === "hardware" && !settings.features.hardware_alerts) return false;
   if (alert.kind === "f1" && !settings.features.f1_hub) return false;
+  // The user's own key press: shown under Do Not Disturb too.
+  if (alert.kind === "hud") return settings.features.system_hud;
   if (settings.dnd_enabled) {
     return alert.kind === "toast" || (alert.kind === "hardware" && alert.tone === "warning");
   }
@@ -306,6 +319,7 @@ export const useNotchStore = create<NotchStore>()(
         f1Schedule: null,
         f1Status: "idle",
         f1Winner: null,
+        recording: null,
 
         pushAlert: (alert) => {
           const store = get();
@@ -321,6 +335,25 @@ export const useNotchStore = create<NotchStore>()(
           const alerts = showing ? [showing, ...queue.slice(0, room)] : queue.slice(0, room);
           set({ alerts });
           applyInputs({ hasAlert: true });
+        },
+        showHud: (hud) => {
+          const store = get();
+          const alert = hudAlert(hud);
+          if (!admitsAlert(alert, store)) return;
+          const [showing, ...rest] = store.alerts;
+          if (showing?.hud && alert.hud && showing.hud.kind === hud.kind) {
+            const revision = showing.hud.revision + 1;
+            set({ alerts: [{ ...showing, hud: { ...alert.hud, revision } }, ...rest] });
+            return;
+          }
+          // Ahead of everything; a pop-up on screen goes back to waiting.
+          const others = store.alerts.filter((queued) => queued.kind !== "hud");
+          set({ alerts: [alert, ...others].slice(0, ALERT_QUEUE_LIMIT) });
+          applyInputs({ hasAlert: true });
+        },
+        setRecording: (recording) => set({ recording }),
+        setVisualEffect: (effect, on) => {
+          if (get().settings[effect] !== on) patchSettings({ [effect]: on });
         },
         dismissAlert: (id) => {
           const alerts = get().alerts.filter((alert) => alert.id !== id);
@@ -457,6 +490,8 @@ export const useNotchStore = create<NotchStore>()(
               scale: normalizeScale(settings.scale, DEFAULT_SETTINGS.scale),
               glow_start: normalizeHex(settings.glow_start, GLOW_START_DEFAULT),
               glow_end: normalizeHex(settings.glow_end, GLOW_END_DEFAULT),
+              neon_border_enabled: settings.neon_border_enabled ?? DEFAULT_SETTINGS.neon_border_enabled,
+              inner_gradient_enabled: settings.inner_gradient_enabled ?? DEFAULT_SETTINGS.inner_gradient_enabled,
               features: { ...DEFAULT_SETTINGS.features, ...settings.features },
             },
           }),

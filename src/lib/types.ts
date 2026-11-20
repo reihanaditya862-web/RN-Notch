@@ -87,6 +87,10 @@ export interface AppSettings {
   glow_end: string;
   active_widgets: ActiveWidgets;
   dnd_enabled: boolean;
+  /** The neon line and its glow along the capsule's edge. */
+  neon_border_enabled: boolean;
+  /** The faint colour light inside the capsule; off leaves it solid black. */
+  inner_gradient_enabled: boolean;
   /** Optional modules; each one's background work stops when it is off. */
   features: Features;
 }
@@ -100,6 +104,8 @@ export interface Features {
   f1_hub: boolean;
   /** Synced lyrics (LRCLIB) in place of the title while a song plays. */
   lyrics: boolean;
+  /** The volume/brightness pill when either changes. */
+  system_hud: boolean;
 }
 
 /** Mirrors the Rust `ForegroundState` struct in `src-tauri/src/commands/window_detector.rs`. */

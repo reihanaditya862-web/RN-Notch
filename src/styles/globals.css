@@ -15,8 +15,13 @@
   --notch-bg: #09090b;
   --notch-bg-hover: #0f0f12;
   --notch-bg-opacity: 0.95;
-  --notch-surface: #18181b;
-  --notch-surface-hover: #27272a;
+  /*
+   * Raised surfaces (fields, preset buttons, cards) are dark glass: a faint
+   * white layer over the black capsule rather than a flat grey, edged with a
+   * hairline (see `.bg-notch-surface` below).
+   */
+  --notch-surface: rgba(255, 255, 255, 0.055);
+  --notch-surface-hover: rgba(255, 255, 255, 0.12);
 
   /* Border */
   --notch-border: rgba(255, 255, 255, 0.08);
@@ -267,6 +272,19 @@ body {
   animation: notch-rev-jitter 70ms linear infinite;
 }
 
+/* The rims turn once the car launches. */
+@keyframes notch-wheel-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.notch-wheel-spin {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: notch-wheel-spin 120ms linear infinite;
+}
+
 /*
  * Draw only when something moves: while the capsule is retracted to its lip
  * or off screen (fullscreen app, lock screen), nothing it shows is visible,
@@ -276,7 +294,8 @@ body {
 [data-state][data-retracted="true"] .notch-ambient-breathing,
 [data-state][aria-hidden="true"] .notch-wave-bar,
 [data-state][aria-hidden="true"] .notch-ambient-breathing,
-[data-state][aria-hidden="true"] .notch-rev-jitter {
+[data-state][aria-hidden="true"] .notch-rev-jitter,
+[data-state][aria-hidden="true"] .notch-wheel-spin {
   animation-play-state: paused;
 }
 
@@ -288,6 +307,7 @@ body {
   .notch-wave-bar,
   .notch-ambient-breathing,
   .notch-rev-jitter,
+  .notch-wheel-spin,
   .notch-landing {
     animation: none;
   }
@@ -303,6 +323,7 @@ body {
 :root[data-battery-saver] .notch-wave-bar,
 :root[data-battery-saver] .notch-ambient-breathing,
 :root[data-battery-saver] .notch-rev-jitter,
+:root[data-battery-saver] .notch-wheel-spin,
 :root[data-battery-saver] .notch-landing {
   animation: none;
 }
@@ -321,6 +342,15 @@ body {
 
 :root[data-battery-saver] .notch-outline-glow {
   display: none;
+}
+
+/*
+ * The hairline edge of every glass surface. An inset shadow, so it adds no
+ * size and never shifts the layout; it is static, never animated.
+ */
+.bg-notch-surface,
+.bg-notch-surface-hover {
+  box-shadow: inset 0 0 0 1px var(--notch-border);
 }
 
 /* Text fields stay selectable although the rest of the UI is not. */
