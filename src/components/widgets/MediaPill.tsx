@@ -13,6 +13,7 @@ import {
 import type { MediaInfo, RepeatMode } from "../../lib/types";
 import { DigitText } from "./DigitText";
 import { LyricLine } from "./LyricLine";
+import { MediaSeekbar, formatDuration } from "./MediaSeekbar";
 
 interface MediaPillProps {
   /** The active session, or null to show the "nothing playing" state. */
@@ -31,18 +32,6 @@ interface MediaPillProps {
   lyric?: string | null;
   /** Padding classes; override when the pill is embedded in a padded layout. */
   className?: string;
-}
-
-/** Formats milliseconds as m:ss, or h:mm:ss for an hour and longer. */
-function formatDuration(ms: number): string {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = String(totalSeconds % 60).padStart(2, "0");
-
-  return hours > 0
-    ? `${hours}:${String(minutes).padStart(2, "0")}:${seconds}`
-    : `${minutes}:${seconds}`;
 }
 
 interface TruncatedTextProps {
@@ -121,124 +110,6 @@ function ControlButton({
   );
 }
 
-const SEEK_STEP_MS = 5000;
-
-const ACCENT_GRADIENT =
-  "linear-gradient(90deg, var(--notch-accent-1, #ffffff), var(--notch-accent-2, #ffffff), var(--notch-accent-3, #ffffff))";
-
-interface SeekBarProps {
-  media: MediaInfo | null;
-  pollIntervalMs: number;
-  onSeek: (positionMs: number) => void;
-}
-
-/**
- * Thin progress bar in the cover's colours (white while paused or without a
- * cover). Where the app allows it, a click or
- * drag jumps to that point and the arrow keys step 5 seconds back or ahead.
- * The hit area is taller than the 3px line so it is easy to grab.
- */
-function SeekBar({ media, pollIntervalMs, onSeek }: SeekBarProps) {
-  const barRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<number | null>(null);
-  const [dragFraction, setDragFraction] = useState<number | null>(null);
-
-  const duration = media?.duration_ms ?? 0;
-  const canSeek = Boolean(media?.can_seek) && duration > 0;
-  const progress = duration > 0 ? Math.min(1, (media?.position_ms ?? 0) / duration) : 0;
-  const shown = dragFraction ?? progress;
-  const trackKey = media ? `${media.source}|${media.title}|${media.artist}` : "none";
-  const glide =
-    media?.is_playing && dragFraction === null ? `${pollIntervalMs}ms linear` : null;
-
-  const fractionAt = (clientX: number) => {
-    const rect = barRef.current?.getBoundingClientRect();
-    if (!rect || rect.width === 0) return 0;
-    return Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-  };
-  const dragTo = (fraction: number) => {
-    dragRef.current = fraction;
-    setDragFraction(fraction);
-  };
-  const finishDrag = () => {
-    const fraction = dragRef.current;
-    if (fraction === null) return;
-    dragRef.current = null;
-    setDragFraction(null);
-    onSeek(fraction * duration);
-  };
-
-  return (
-    <div
-      ref={barRef}
-      role="slider"
-      aria-label="Playback position"
-      aria-valuemin={0}
-      aria-valuemax={Math.round(duration / 1000)}
-      aria-valuenow={Math.round((shown * duration) / 1000)}
-      aria-valuetext={formatDuration(shown * duration)}
-      aria-disabled={!canSeek}
-      tabIndex={canSeek ? 0 : -1}
-      onPointerDown={(event) => {
-        if (!canSeek || event.button !== 0) return;
-        event.currentTarget.setPointerCapture(event.pointerId);
-        dragTo(fractionAt(event.clientX));
-      }}
-      onPointerMove={(event) => {
-        if (dragRef.current !== null) dragTo(fractionAt(event.clientX));
-      }}
-      onPointerUp={finishDrag}
-      onPointerCancel={finishDrag}
-      onLostPointerCapture={finishDrag}
-      onKeyDown={(event) => {
-        const step =
-          event.key === "ArrowRight" ? SEEK_STEP_MS : event.key === "ArrowLeft" ? -SEEK_STEP_MS : 0;
-        if (!canSeek || !media || step === 0) return;
-        event.preventDefault();
-        onSeek(media.position_ms + step);
-      }}
-      className={[
-        "group relative -my-1.5 flex h-[15px] min-w-0 flex-1 touch-none items-center rounded-full",
-        "outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-notch-focus",
-        canSeek ? "cursor-pointer" : "",
-      ].join(" ")}
-    >
-      <div className="h-[3px] w-full overflow-hidden rounded-full bg-white/10">
-        {/*
-          The gradient lives on a full-width layer and is revealed by clipping
-          rather than scaling, so its colours stay put while the bar grows.
-        */}
-        <div
-          key={trackKey}
-          className="h-full w-full"
-          style={{
-            background: ACCENT_GRADIENT,
-            clipPath: `inset(0 ${(1 - shown) * 100}% 0 0)`,
-            transition: glide ? `clip-path ${glide}` : "none",
-          }}
-        />
-      </div>
-      {canSeek && (
-        <span
-          aria-hidden="true"
-          className={[
-            "pointer-events-none absolute top-1/2 h-[9px] w-[9px] -translate-x-1/2 -translate-y-1/2 rounded-full",
-            "shadow-[0_0_6px_rgb(0_0_0/0.5)] transition-opacity duration-150",
-            dragFraction !== null
-              ? "opacity-100"
-              : "opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100",
-          ].join(" ")}
-          style={{
-            left: `${shown * 100}%`,
-            background: "var(--notch-accent-light, #fff)",
-            transition: glide ? `left ${glide}, opacity 150ms ease` : undefined,
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
 const REPEAT_LABELS: Record<RepeatMode, string> = {
   none: "Repeat: off",
   list: "Repeat: all",
@@ -246,8 +117,8 @@ const REPEAT_LABELS: Record<RepeatMode, string> = {
 };
 
 /**
- * Expanded media player: cover art, title, artist, a thin progress bar and
- * the previous / play-pause / next controls.
+ * Expanded media player: cover art, title, artist, the seek bar (in the
+ * style chosen in Settings) and the previous / play-pause / next controls.
  */
 export function MediaPill({
   media,
@@ -328,7 +199,7 @@ export function MediaPill({
             <DigitText text={formatDuration(media.position_ms)} />
           </span>
         )}
-        <SeekBar media={media} pollIntervalMs={pollIntervalMs} onSeek={onSeek} />
+        <MediaSeekbar media={media} pollIntervalMs={pollIntervalMs} onSeek={onSeek} />
         {hasTimeline && (
           <span aria-hidden="true" className="shrink-0 font-display text-[9px] leading-none font-bold text-notch-tertiary">
             <DigitText text={formatDuration(media.duration_ms)} />

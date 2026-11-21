@@ -1,16 +1,30 @@
 import { useEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
-import { cachedLyrics, fetchLyrics, lineAt, lyricsKey } from "../lib/lyrics";
+import { type Lyrics, cachedLyrics, fetchLyrics, lineIndexAt, lyricsKey } from "../lib/lyrics";
 import type { MediaInfo } from "../lib/types";
 
 /**
- * The lyric line being sung right now, or null (lyrics off, nothing playing,
- * no synced lyrics for this song). An empty string is a pause between lines.
+ * - `off`: lyrics are switched off, or nothing is playing.
+ * - `loading`: LRCLIB is being asked.
+ * - `synced` / `plain` / `instrumental`: what LRCLIB has.
+ * - `missing`: LRCLIB does not know the song.
+ */
+export type LyricsStatus = "off" | "loading" | "synced" | "plain" | "instrumental" | "missing";
+
+export interface LyricsTrack {
+  status: LyricsStatus;
+  lyrics: Lyrics | null;
+  /** The synced line being sung, -1 before the first one (or with none). */
+  index: number;
+}
+
+/**
+ * The lyrics of the playing track and the line being sung right now.
  *
  * No animation loop: the position is carried forward from the last media
  * poll, and one timer wakes the hook exactly when the next line starts.
  */
-export function useLyrics(media: MediaInfo | null, enabled: boolean): string | null {
+export function useLyricsTrack(media: MediaInfo | null, enabled: boolean): LyricsTrack {
   const title = media?.title ?? "";
   const artist = media?.artist ?? "";
   const duration = media?.duration_ms ?? 0;
@@ -39,11 +53,12 @@ export function useLyrics(media: MediaInfo | null, enabled: boolean): string | n
     anchor.current = { position, at: Date.now(), playing: isPlaying };
   }
 
-  const lines = key ? cachedLyrics(key) : null;
+  const entry = key ? cachedLyrics(key) : undefined;
+  const lines = entry?.synced ?? null;
   const now = isPlaying
     ? anchor.current.position + (Date.now() - anchor.current.at)
     : anchor.current.position;
-  const { line, next } = lines ? lineAt(lines, now) : { line: null, next: null };
+  const { index, next } = lines ? lineIndexAt(lines, now) : { index: -1, next: null };
 
   useEffect(() => {
     if (!lines || !isPlaying || next === null) return;
@@ -51,6 +66,23 @@ export function useLyrics(media: MediaInfo | null, enabled: boolean): string | n
     return () => window.clearTimeout(timer);
   }, [lines, isPlaying, next, now]);
 
+  let status: LyricsStatus = "missing";
+  if (!key) status = "off";
+  else if (entry === undefined) status = isTauri() ? "loading" : "missing";
+  else if (entry?.synced) status = "synced";
+  else if (entry?.plain) status = "plain";
+  else if (entry?.instrumental) status = "instrumental";
+
+  return { status, lyrics: entry ?? null, index };
+}
+
+/**
+ * The synced line being sung right now, or null (lyrics off, nothing playing,
+ * no synced lyrics for this song). An empty string is a pause between lines.
+ */
+export function useLyrics(media: MediaInfo | null, enabled: boolean): string | null {
+  const { lyrics, index } = useLyricsTrack(media, enabled);
+  const lines = lyrics?.synced;
   if (!lines) return null;
-  return line ? line.text : null;
+  return index >= 0 ? lines[index].text : null;
 }

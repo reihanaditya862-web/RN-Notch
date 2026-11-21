@@ -38,6 +38,21 @@ pub enum DisplayMode {
     Notch,
 }
 
+/// How the media player draws its seek bar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SeekbarStyle {
+    /// A thick capsule, a thin divider at the position, a thin rest.
+    Standard,
+    /// A flowing squiggle up to a round thumb (Material You).
+    #[default]
+    Wave,
+    /// One thin line, no thumb.
+    Slim,
+    /// A wide, gentle wave up to a short upright bar.
+    Wavy,
+}
+
 impl DisplayMode {
     pub fn toggled(self) -> Self {
         match self {
@@ -216,6 +231,8 @@ pub struct AppSettings {
     pub neon_border_enabled: bool,
     /// The faint colour light inside the capsule; off leaves it solid black.
     pub inner_gradient_enabled: bool,
+    /// The media player's seek bar style.
+    pub seekbar_style: SeekbarStyle,
     pub features: Features,
 }
 
@@ -231,6 +248,7 @@ impl Default for AppSettings {
             dnd_enabled: false,
             neon_border_enabled: true,
             inner_gradient_enabled: true,
+            seekbar_style: SeekbarStyle::default(),
             features: Features::default(),
         }
     }
@@ -317,6 +335,10 @@ impl AppSettings {
                 .get("inner_gradient_enabled")
                 .and_then(Value::as_bool)
                 .unwrap_or(defaults.inner_gradient_enabled),
+            seekbar_style: root
+                .get("seekbar_style")
+                .and_then(|value| serde_json::from_value(value.clone()).ok())
+                .unwrap_or(defaults.seekbar_style),
             features: Features {
                 notifications: feature("notifications", defaults.features.notifications),
                 hardware_alerts: feature("hardware_alerts", defaults.features.hardware_alerts),
@@ -601,6 +623,15 @@ mod tests {
     }
 
     #[test]
+    fn seekbar_style_reads_and_falls_back() {
+        let wavy = AppSettings::from_json(r#"{ "seekbar_style": "wavy" }"#);
+        assert_eq!(wavy.seekbar_style, SeekbarStyle::Wavy);
+        let unknown = AppSettings::from_json(r#"{ "seekbar_style": "zigzag" }"#);
+        assert_eq!(unknown.seekbar_style, SeekbarStyle::Wave);
+        assert_eq!(AppSettings::from_json("{}").seekbar_style, SeekbarStyle::Wave);
+    }
+
+    #[test]
     fn corrupt_text_yields_defaults() {
         assert_eq!(AppSettings::from_json(""), AppSettings::default());
         assert_eq!(AppSettings::from_json("{ not json"), AppSettings::default());
@@ -643,6 +674,7 @@ mod tests {
             dnd_enabled: true,
             neon_border_enabled: false,
             inner_gradient_enabled: false,
+            seekbar_style: SeekbarStyle::Wavy,
             features: Features {
                 f1_hub: false,
                 system_hud: false,

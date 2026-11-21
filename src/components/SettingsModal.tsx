@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import {
+  AudioWaveform,
   Bell,
   Blend,
   ClipboardList,
@@ -35,6 +36,7 @@ import {
 import type { ActiveWidgets, DisplayMode, Features } from "../lib/types";
 import { useNotchStore } from "../stores/notchStore";
 import { DigitText } from "./widgets/DigitText";
+import { SeekbarStylePicker } from "./widgets/SeekbarStylePicker";
 
 const FOCUS_RING =
   "outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-notch-focus";
@@ -445,6 +447,12 @@ function GeneralTab() {
         </span>
       </label>
 
+      <div className="flex h-9 items-center gap-2">
+        <AudioWaveform size={14} strokeWidth={1.5} aria-hidden="true" className="mx-1 shrink-0 text-notch-tertiary" />
+        <span className="w-14 shrink-0 text-[12px] leading-4 text-notch-primary">Seek bar</span>
+        <SeekbarStylePicker />
+      </div>
+
       <GlowColors />
 
       <div role="group" aria-label="Capsule effects" className="grid grid-cols-2 gap-1.5">
@@ -514,8 +522,8 @@ function ModulesTab() {
 
 /**
  * Settings panel, shown inside the capsule (420x380), in two tabs:
- * - General: display mode, size, opacity, the glow colours, and switches
- *   for the neon border and the inner glow.
+ * - General: display mode, size, opacity, the seek bar style, the glow
+ *   colours, and switches for the neon border and the inner glow.
  * - Modules: which widgets and modules are on, Do Not Disturb and Start
  *   with Windows. A module switched off also stops its background work.
  *

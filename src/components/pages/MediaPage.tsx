@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { MicVocal } from "lucide-react";
 import { DASHBOARD } from "../../lib/layout";
 import type { ActiveWidgets, MediaInfo } from "../../lib/types";
 import { ErrorBoundary } from "../ErrorBoundary";
@@ -6,7 +7,8 @@ import { AiShortcutRow } from "../widgets/AiDrawer";
 import { ClockDisplay } from "../widgets/ClockDisplay";
 import { MediaPill } from "../widgets/MediaPill";
 import { SystemHUD } from "../widgets/SystemHUD";
-import { CollapseButton, PageHeader } from "./PageHeader";
+import { useNotchStore } from "../../stores/notchStore";
+import { CollapseButton, FOCUS_RING, PageHeader } from "./PageHeader";
 
 export interface MediaControls {
   media: MediaInfo | null;
@@ -63,6 +65,25 @@ function InlineAiDrawer() {
   );
 }
 
+/** Opens the lyrics page (the next page, also reached with the wheel). */
+function LyricsButton() {
+  return (
+    <button
+      type="button"
+      onClick={() => useNotchStore.getState().setDashboardPage("lyrics")}
+      aria-label="Lyrics"
+      title="Lyrics"
+      className={[
+        "flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-notch-secondary",
+        "transition-[color,scale] duration-100 hover:scale-110 hover:text-notch-primary active:scale-95",
+        FOCUS_RING,
+      ].join(" ")}
+    >
+      <MicVocal size={13} strokeWidth={1.75} aria-hidden="true" />
+    </button>
+  );
+}
+
 /** Page one: the media player with the AI drawer, then the system monitor. */
 export function MediaPage({
   widgets,
@@ -73,6 +94,7 @@ export function MediaPage({
   controls: MediaControls;
   onCollapse: () => void;
 }) {
+  const hasLyricsPage = useNotchStore((store) => store.settings.features.lyrics);
   return (
     <div className="flex h-full flex-col gap-1.5">
       {widgets.media ? (
@@ -92,6 +114,7 @@ export function MediaPage({
                 className="p-0"
                 trailing={
                   <>
+                    {hasLyricsPage && <LyricsButton />}
                     <ClockDisplay />
                     <CollapseButton onCollapse={onCollapse} />
                   </>

@@ -272,6 +272,41 @@ body {
   animation: notch-rev-jitter 70ms linear infinite;
 }
 
+/*
+ * The seek bar's wave flows toward the thumb: its SVG slides right by exactly
+ * one wavelength (14 px for "wave", 26 px for "wavy") and starts over, which
+ * looks continuous. A transform on the element itself: compositor work.
+ */
+@keyframes notch-squiggle-wave {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(14px, 0, 0);
+  }
+}
+
+@keyframes notch-squiggle-wavy {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(26px, 0, 0);
+  }
+}
+
+.notch-squiggle {
+  will-change: transform;
+}
+
+.notch-squiggle-wave {
+  animation: notch-squiggle-wave 1.1s linear infinite;
+}
+
+.notch-squiggle-wavy {
+  animation: notch-squiggle-wavy 2s linear infinite;
+}
+
 /* The rims turn once the car launches. */
 @keyframes notch-wheel-spin {
   to {
@@ -295,7 +330,9 @@ body {
 [data-state][aria-hidden="true"] .notch-wave-bar,
 [data-state][aria-hidden="true"] .notch-ambient-breathing,
 [data-state][aria-hidden="true"] .notch-rev-jitter,
-[data-state][aria-hidden="true"] .notch-wheel-spin {
+[data-state][aria-hidden="true"] .notch-wheel-spin,
+[data-state][data-retracted="true"] .notch-squiggle,
+[data-state][aria-hidden="true"] .notch-squiggle {
   animation-play-state: paused;
 }
 
@@ -308,6 +345,7 @@ body {
   .notch-ambient-breathing,
   .notch-rev-jitter,
   .notch-wheel-spin,
+  .notch-squiggle,
   .notch-landing {
     animation: none;
   }
@@ -324,6 +362,7 @@ body {
 :root[data-battery-saver] .notch-ambient-breathing,
 :root[data-battery-saver] .notch-rev-jitter,
 :root[data-battery-saver] .notch-wheel-spin,
+:root[data-battery-saver] .notch-squiggle,
 :root[data-battery-saver] .notch-landing {
   animation: none;
 }

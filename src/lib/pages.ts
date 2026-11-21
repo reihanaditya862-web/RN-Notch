@@ -1,7 +1,7 @@
 import { NOTCH_SIZES } from "./constants";
 import type { AppSettings } from "./types";
 
-export type DashboardPageId = "media" | "calendar" | "shelf" | "tools" | "f1";
+export type DashboardPageId = "media" | "lyrics" | "calendar" | "shelf" | "tools" | "f1";
 
 export interface DashboardPage {
   id: DashboardPageId;
@@ -16,6 +16,7 @@ export function dashboardPages(settings: AppSettings): DashboardPage[] {
   const { active_widgets: widgets, features } = settings;
   const pages: DashboardPage[] = [];
   if (widgets.media || widgets.system) pages.push({ id: "media", label: "Media" });
+  if (widgets.media && features.lyrics) pages.push({ id: "lyrics", label: "Lyrics" });
   pages.push({ id: "calendar", label: "Today" });
   if (features.clipboard_history || widgets.file_shelf || widgets.scratchpad) {
     pages.push({ id: "shelf", label: "Clipboard & shelf" });

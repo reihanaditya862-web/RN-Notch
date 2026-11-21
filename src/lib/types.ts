@@ -76,6 +76,9 @@ export interface ActiveWidgets {
  * Mirrors the Rust `AppSettings` struct in `src-tauri/src/commands/settings.rs`.
  * Stored at `%APPDATA%\rn-notch\settings.json`.
  */
+/** How the media player draws its seek bar (Rust `SeekbarStyle`). */
+export type SeekbarStyle = "standard" | "wave" | "slim" | "wavy";
+
 export interface AppSettings {
   display_mode: DisplayMode;
   /** Opacity of the capsule background, 0.7-1.0. */
@@ -91,6 +94,8 @@ export interface AppSettings {
   neon_border_enabled: boolean;
   /** The faint colour light inside the capsule; off leaves it solid black. */
   inner_gradient_enabled: boolean;
+  /** The media player's seek bar. */
+  seekbar_style: SeekbarStyle;
   /** Optional modules; each one's background work stops when it is off. */
   features: Features;
 }

@@ -95,6 +95,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   dnd_enabled: false,
   neon_border_enabled: true,
   inner_gradient_enabled: true,
+  seekbar_style: "wave",
   features: {
     notifications: true,
     hardware_alerts: true,

@@ -6,6 +6,7 @@ import { useNotchStore } from "../stores/notchStore";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { CalendarPage } from "./pages/CalendarPage";
 import { F1Page } from "./pages/F1Page";
+import { LyricsPage } from "./pages/LyricsPage";
 import { MediaPage, type MediaControls } from "./pages/MediaPage";
 import { ShelfPage } from "./pages/ShelfPage";
 import { ToolsPage } from "./pages/ToolsPage";
@@ -32,8 +33,8 @@ function listCanScroll(target: EventTarget, root: Element, deltaY: number): bool
 }
 
 /**
- * The dashboard shown after clicking the capsule. Its pages - media, today's
- * schedule, clipboard and shelf, tools, F1 - share one size; the mouse wheel
+ * The dashboard shown after clicking the capsule. Its pages - media, lyrics,
+ * today's schedule, clipboard and shelf, tools, F1 - share one size; the mouse wheel
  * over the capsule or the dots at the bottom move between them, so the
  * capsule needs no row of tabs.
  */
@@ -76,6 +77,7 @@ export function Dashboard({
     media: () => (
       <MediaPage widgets={settings.active_widgets} controls={controls} onCollapse={onCollapse} />
     ),
+    lyrics: () => <LyricsPage controls={controls} onCollapse={onCollapse} />,
     calendar: () => <CalendarPage onCollapse={onCollapse} />,
     shelf: () => <ShelfPage onCollapse={onCollapse} />,
     tools: () => <ToolsPage onCollapse={onCollapse} />,

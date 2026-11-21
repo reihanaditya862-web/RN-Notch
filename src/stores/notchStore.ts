@@ -27,6 +27,7 @@ import type {
   NotchState,
   ScaleOption,
   ScheduleItem,
+  SeekbarStyle,
   ShelfFile,
   SystemInfo,
 } from "../lib/types";
@@ -134,6 +135,7 @@ interface NotchStore extends StateInputs {
    */
   showHud: (hud: HudReading) => void;
   setRecording: (recording: { startedAt: number } | null) => void;
+  setSeekbarStyle: (style: SeekbarStyle) => void;
   /** Switches the neon border or the inner gradient (Settings). */
   setVisualEffect: (effect: "neon_border_enabled" | "inner_gradient_enabled", on: boolean) => void;
   /** Drops every pop-up (the capsule went off screen; they would be stale later). */
@@ -232,6 +234,12 @@ function isFresh(file: ShelfFile, now: number): boolean {
 
 function pickMinutes(value: unknown, options: readonly number[], fallback: number): number {
   return typeof value === "number" && options.includes(value) ? value : fallback;
+}
+
+const SEEKBAR_STYLES: readonly SeekbarStyle[] = ["standard", "wave", "slim", "wavy"];
+
+function isSeekbarStyle(value: unknown): value is SeekbarStyle {
+  return SEEKBAR_STYLES.includes(value as SeekbarStyle);
 }
 
 /** Whether a pop-up may be shown now (see `pushAlert`). */
@@ -352,6 +360,11 @@ export const useNotchStore = create<NotchStore>()(
           applyInputs({ hasAlert: true });
         },
         setRecording: (recording) => set({ recording }),
+        setSeekbarStyle: (style) => {
+          if (isSeekbarStyle(style) && style !== get().settings.seekbar_style) {
+            patchSettings({ seekbar_style: style });
+          }
+        },
         setVisualEffect: (effect, on) => {
           if (get().settings[effect] !== on) patchSettings({ [effect]: on });
         },
@@ -492,6 +505,9 @@ export const useNotchStore = create<NotchStore>()(
               glow_end: normalizeHex(settings.glow_end, GLOW_END_DEFAULT),
               neon_border_enabled: settings.neon_border_enabled ?? DEFAULT_SETTINGS.neon_border_enabled,
               inner_gradient_enabled: settings.inner_gradient_enabled ?? DEFAULT_SETTINGS.inner_gradient_enabled,
+              seekbar_style: isSeekbarStyle(settings.seekbar_style)
+                ? settings.seekbar_style
+                : DEFAULT_SETTINGS.seekbar_style,
               features: { ...DEFAULT_SETTINGS.features, ...settings.features },
             },
           }),
