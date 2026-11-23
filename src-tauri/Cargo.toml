@@ -29,8 +29,6 @@ sysinfo = { version = "0.32", default-features = false, features = ["system"] }
 
 # Windows-only APIs. Same version Tauri itself depends on, so only one copy is compiled.
 [target.'cfg(windows)'.dependencies]
-# Allocator with less heap fragmentation than the default for a long-running process.
-mimalloc = { version = "0.1", default-features = false }
 # WebView2 interfaces beyond what Tauri wraps (the memory target); the same
 # version Tauri itself uses, so the types are shared.
 webview2-com = "0.39"

@@ -3,8 +3,12 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { MediaInfo } from "../lib/types";
 import { useNotchStore } from "../stores/notchStore";
 
-/** The collapse animation has finished by then. */
-const COLLAPSE_SETTLE_MS = 400;
+/**
+ * Trimmed once the collapse animation has finished, and once more a little
+ * later, when whatever the open capsule (or the app's start) left behind
+ * has settled.
+ */
+const TRIM_AFTER_MS = [400, 8000];
 
 /**
  * While the capsule sits collapsed (or off screen), RN Notch asks for its
@@ -23,11 +27,13 @@ export function useCollapsedMemory(isCollapsed: boolean): void {
       }
       return;
     }
-    const timer = window.setTimeout(() => {
-      isLow.current = true;
-      invoke("set_memory_mode", { low: true }).catch(() => undefined);
-    }, COLLAPSE_SETTLE_MS);
-    return () => window.clearTimeout(timer);
+    const timers = TRIM_AFTER_MS.map((delay) =>
+      window.setTimeout(() => {
+        isLow.current = true;
+        invoke("set_memory_mode", { low: true }).catch(() => undefined);
+      }, delay),
+    );
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
   }, [isCollapsed]);
 }
 
