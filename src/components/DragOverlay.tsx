@@ -3,8 +3,9 @@ import { SHELF_MAX_FILES } from "../lib/constants";
 import { useNotchStore } from "../stores/notchStore";
 
 /**
- * Shown while a file is dragged over the capsule: a pulsing dashed cyan frame
- * and how much room is left on the shelf.
+ * Shown while a file is dragged over the capsule (or pulled in by the
+ * magnet as it nears): a pulsing dashed frame and how much room is left on
+ * the shelf. Dropping opens the shelf page.
  */
 export function DragOverlay() {
   const count = useNotchStore((store) => store.shelfFiles.length);
@@ -30,7 +31,7 @@ export function DragOverlay() {
           />
         )}
         <p className="text-[13px] leading-[18px] font-medium text-notch-primary">
-          {isFull ? "Shelf full" : "Drop files here"}
+          {isFull ? "Shelf full" : "Drop files to hold"}
         </p>
         <p className="font-mono text-[10px] leading-3 tracking-[-0.02em] text-notch-tertiary">
           {isFull

@@ -23,6 +23,7 @@ import {
   Volume2,
   Wifi,
   X,
+  Zap,
 } from "lucide-react";
 import { useAutostart } from "../hooks/useAutostart";
 import { hexFromHue, hueFromHex, parseTypedHex } from "../lib/color";
@@ -37,6 +38,7 @@ import type { ActiveWidgets, DisplayMode, Features } from "../lib/types";
 import { useNotchStore } from "../stores/notchStore";
 import { DigitText } from "./widgets/DigitText";
 import { SeekbarStylePicker } from "./widgets/SeekbarStylePicker";
+import { AccentPicker, ThemePresetPicker } from "./widgets/ThemeControls";
 
 const FOCUS_RING =
   "outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-notch-focus";
@@ -296,6 +298,7 @@ const FEATURES: Array<{ key: keyof Features; label: string; icon: ReactNode }> =
   { key: "f1_hub", label: "F1 Race Hub", icon: <Flag size={14} strokeWidth={1.5} /> },
   { key: "lyrics", label: "Live lyrics", icon: <MicVocal size={14} strokeWidth={1.5} /> },
   { key: "system_hud", label: "System HUD", icon: <Volume2 size={14} strokeWidth={1.5} /> },
+  { key: "smart_context", label: "Smart context", icon: <Zap size={14} strokeWidth={1.5} /> },
 ];
 
 type NotificationAccess = "allowed" | "denied" | "unspecified" | "unavailable";
@@ -362,14 +365,15 @@ function NotificationAccessRow() {
   );
 }
 
-type Tab = "general" | "modules";
+type Tab = "general" | "theme" | "modules";
+
+const TAB_LABELS: Record<Tab, string> = { general: "General", theme: "Theme", modules: "Modules" };
 
 function GeneralTab() {
   const settings = useNotchStore((store) => store.settings);
   const setDisplayMode = useNotchStore((store) => store.setDisplayMode);
   const setOpacity = useNotchStore((store) => store.setOpacity);
   const setScale = useNotchStore((store) => store.setScale);
-  const setVisualEffect = useNotchStore((store) => store.setVisualEffect);
 
   const opacityPercent = Math.round(settings.opacity * 100);
   const opacityMin = Math.round(OPACITY_MIN * 100);
@@ -447,6 +451,23 @@ function GeneralTab() {
         </span>
       </label>
 
+    </>
+  );
+}
+
+/**
+ * The look: theme, accent, seek bar style, the glow colours inside the
+ * capsule, and the neon border and inner glow switches.
+ */
+function ThemeTab() {
+  const settings = useNotchStore((store) => store.settings);
+  const setVisualEffect = useNotchStore((store) => store.setVisualEffect);
+
+  return (
+    <>
+      <ThemePresetPicker />
+      <AccentPicker />
+
       <div className="flex h-9 items-center gap-2">
         <AudioWaveform size={14} strokeWidth={1.5} aria-hidden="true" className="mx-1 shrink-0 text-notch-tertiary" />
         <span className="w-14 shrink-0 text-[12px] leading-4 text-notch-primary">Seek bar</span>
@@ -522,8 +543,9 @@ function ModulesTab() {
 
 /**
  * Settings panel, shown inside the capsule (420x380), in two tabs:
- * - General: display mode, size, opacity, the seek bar style, the glow
- *   colours, and switches for the neon border and the inner glow.
+ * - General: display mode, size and opacity.
+ * - Theme: Liquid Glass / Pure Obsidian / Paddock Telemetry, the accent,
+ *   the seek bar style, the glow colours, the neon border and inner glow.
  * - Modules: which widgets and modules are on, Do Not Disturb and Start
  *   with Windows. A module switched off also stops its background work.
  *
@@ -540,7 +562,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       <header className="flex h-6 items-center gap-2">
         <h2 className="text-[13px] leading-[18px] font-medium text-notch-primary">Settings</h2>
         <div role="tablist" aria-label="Settings sections" className="ml-1 flex h-6 gap-0.5 rounded-lg bg-notch-surface p-0.5">
-          {(["general", "modules"] as const).map((value) => (
+          {(["general", "theme", "modules"] as const).map((value) => (
             <button
               key={value}
               type="button"
@@ -553,7 +575,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                 tab === value ? "bg-notch-surface-hover text-notch-primary" : "text-notch-secondary hover:text-notch-primary",
               ].join(" ")}
             >
-              {value === "general" ? "General" : "Modules"}
+              {TAB_LABELS[value]}
             </button>
           ))}
         </div>
@@ -573,7 +595,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         </button>
       </header>
 
-      {tab === "general" ? <GeneralTab /> : <ModulesTab />}
+      {tab === "general" ? <GeneralTab /> : tab === "theme" ? <ThemeTab /> : <ModulesTab />}
 
       <span className="flex-1" />
       <p className="truncate font-mono text-[10px] leading-3 tracking-[-0.02em] text-notch-tertiary">

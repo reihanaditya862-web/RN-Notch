@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import type { F1Race } from "../lib/f1";
 import type { ScheduleItem } from "../lib/types";
 import { useNotchStore } from "../stores/notchStore";
 import { useSchedules } from "./useSchedules";
@@ -8,7 +9,45 @@ import { useSchedules } from "./useSchedules";
 export type LiveActivity =
   | { kind: "recording"; startedAt: number }
   | { kind: "pomodoro"; phase: "focus" | "break" }
+  | { kind: "f1"; label: string; session: string }
   | { kind: "schedule"; title: string; startsAt: number };
+
+/** How long each kind of F1 session runs, in minutes (a little generous). */
+const F1_SESSION_MINUTES: Record<string, number> = {
+  FP1: 60,
+  FP2: 60,
+  FP3: 60,
+  "Sprint Quali": 45,
+  Sprint: 60,
+  Qualifying: 60,
+  Race: 120,
+};
+
+/** Short pill text per session, in the Formula1 face. */
+const F1_PILL_LABELS: Record<string, string> = {
+  FP1: "F1 FP1",
+  FP2: "F1 FP2",
+  FP3: "F1 FP3",
+  "Sprint Quali": "F1 SQ",
+  Sprint: "F1 SPRINT",
+  Qualifying: "F1 QUALI",
+  Race: "RACE LIVE",
+};
+
+/** The F1 session running right now, from the season schedule. */
+function liveF1Session(races: F1Race[] | null, now: number): { label: string; session: string } | null {
+  if (!races) return null;
+  for (const race of races) {
+    for (const session of race.sessions) {
+      if (!session.hasTime) continue;
+      const minutes = F1_SESSION_MINUTES[session.label] ?? 60;
+      if (now >= session.start && now < session.start + minutes * 60_000) {
+        return { label: F1_PILL_LABELS[session.label] ?? "F1 LIVE", session: `${race.name} ${session.label}` };
+      }
+    }
+  }
+  return null;
+}
 
 /** A routine shows this long before it starts. */
 const SCHEDULE_LEAD_MS = 30 * 60_000;
@@ -44,7 +83,9 @@ function upcomingRoutine(items: ScheduleItem[] | null, now: number): { title: st
 
 /**
  * The live activity to show beside the clock, most important first: a screen
- * recording, then the focus timer, then a routine starting within 30 minutes.
+ * recording, then the focus timer, then an F1 session on track right now
+ * (with smart context and the F1 hub on), then a routine starting within 30
+ * minutes.
  *
  * The recording ends when Snipping Tool comes back to the front (its toolbar
  * was used to stop it) or has no window left (the area selection was
@@ -55,6 +96,25 @@ export function useLiveActivity(): LiveActivity | null {
   const pomodoroPhase = useNotchStore((store) => store.pomodoro.phase);
   const { items } = useSchedules();
   const [routine, setRoutine] = useState<{ title: string; startsAt: number } | null>(null);
+  const f1Races = useNotchStore((store) => store.f1Schedule);
+  const showsF1 = useNotchStore(
+    (store) => store.settings.features.smart_context && store.settings.features.f1_hub,
+  );
+  const [f1Live, setF1Live] = useState<{ label: string; session: string } | null>(null);
+
+  useEffect(() => {
+    if (!showsF1 || !f1Races) {
+      setF1Live(null);
+      return;
+    }
+    const check = () => {
+      const next = liveF1Session(f1Races, Date.now());
+      setF1Live((current) => (current?.session === next?.session ? current : next));
+    };
+    check();
+    const timer = window.setInterval(check, SCHEDULE_CHECK_MS);
+    return () => window.clearInterval(timer);
+  }, [f1Races, showsF1]);
 
   useEffect(() => {
     const check = () => {
@@ -89,6 +149,7 @@ export function useLiveActivity(): LiveActivity | null {
 
   if (recording) return { kind: "recording", startedAt: recording.startedAt };
   if (pomodoroPhase !== "idle") return { kind: "pomodoro", phase: pomodoroPhase };
+  if (f1Live) return { kind: "f1", ...f1Live };
   if (routine) return { kind: "schedule", ...routine };
   return null;
 }

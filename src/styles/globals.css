@@ -48,7 +48,8 @@
   --notch-error: var(--notch-accent-red);
   --notch-info: var(--notch-accent-cyan);
   --notch-charging: var(--notch-accent-amber);
-  --notch-playing: var(--notch-accent-emerald);
+  /* Active switches, chips and highlights follow the accent (lib/theme.ts). */
+  --notch-playing: var(--accent-primary, var(--notch-accent-emerald));
   --notch-focus: var(--notch-accent-cyan);
   --notch-dnd: var(--notch-accent-purple);
 
@@ -390,6 +391,36 @@ body {
 .bg-notch-surface,
 .bg-notch-surface-hover {
   box-shadow: inset 0 0 0 1px var(--notch-border);
+}
+
+/*
+ * Themes (data-theme on <html>, see lib/theme.ts). Liquid Glass gives every
+ * raised surface a specular sheen: a light top edge and a faint tint from the
+ * cover's colour or the accent (--glass-tint, white with the inner glow off).
+ */
+:root[data-theme="liquid-glass"] .bg-notch-surface,
+:root[data-theme="liquid-glass"] .bg-notch-surface-hover {
+  background-image: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--glass-tint, #ffffff) 12%, rgb(255 255 255 / 0.06)),
+    rgb(255 255 255 / 0) 70%
+  );
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.1),
+    inset 0 0 0 1px rgb(255 255 255 / 0.1);
+}
+
+/* Pure Obsidian: solid surfaces on pure black, edges barely there. */
+:root[data-theme="pure-obsidian"] {
+  --notch-surface: #0d0d0f;
+  --notch-surface-hover: #1a1a1d;
+  --notch-border: rgba(255, 255, 255, 0.06);
+}
+
+/* Paddock Telemetry: the Formula1 face on every heading. */
+:root[data-theme="paddock-telemetry"] [data-state] h2 {
+  font-family: var(--notch-font-display);
+  font-weight: 700;
 }
 
 /* Text fields stay selectable although the rest of the UI is not. */

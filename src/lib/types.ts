@@ -76,6 +76,9 @@ export interface ActiveWidgets {
  * Mirrors the Rust `AppSettings` struct in `src-tauri/src/commands/settings.rs`.
  * Stored at `%APPDATA%\rn-notch\settings.json`.
  */
+/** The capsule's overall look (Rust `ThemePreset`). */
+export type ThemePreset = "liquid-glass" | "pure-obsidian" | "paddock-telemetry";
+
 /** How the media player draws its seek bar (Rust `SeekbarStyle`). */
 export type SeekbarStyle = "standard" | "wave" | "slim" | "wavy";
 
@@ -96,6 +99,9 @@ export interface AppSettings {
   inner_gradient_enabled: boolean;
   /** The media player's seek bar. */
   seekbar_style: SeekbarStyle;
+  theme_preset: ThemePreset;
+  /** The user's own accent colour as "#RRGGBB"; null keeps the theme's. */
+  custom_accent_hex: string | null;
   /** Optional modules; each one's background work stops when it is off. */
   features: Features;
 }
@@ -111,6 +117,11 @@ export interface Features {
   lyrics: boolean;
   /** The volume/brightness pill when either changes. */
   system_hud: boolean;
+  /**
+   * The notch follows what the user does: the media page on top when a song
+   * starts, the shelf opening for a file dragged up, F1 sessions shown live.
+   */
+  smart_context: boolean;
 }
 
 /** Mirrors the Rust `ForegroundState` struct in `src-tauri/src/commands/window_detector.rs`. */

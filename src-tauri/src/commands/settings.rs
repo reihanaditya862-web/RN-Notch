@@ -53,6 +53,19 @@ pub enum SeekbarStyle {
     Wavy,
 }
 
+/// The capsule's overall look.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ThemePreset {
+    /// Translucent dark glass with a specular rim.
+    #[default]
+    LiquidGlass,
+    /// Solid OLED black, minimal edges.
+    PureObsidian,
+    /// Carbon black with a fine grid, racing red, Formula1 type.
+    PaddockTelemetry,
+}
+
 impl DisplayMode {
     pub fn toggled(self) -> Self {
         match self {
@@ -199,6 +212,9 @@ pub struct Features {
     pub lyrics: bool,
     /// A volume/brightness pill on the notch when either changes.
     pub system_hud: bool,
+    /// The notch follows what the user does: media on top when a song
+    /// starts, the shelf opening for a file dragged up, F1 sessions live.
+    pub smart_context: bool,
 }
 
 impl Default for Features {
@@ -211,6 +227,7 @@ impl Default for Features {
             f1_hub: true,
             lyrics: true,
             system_hud: true,
+            smart_context: true,
         }
     }
 }
@@ -233,6 +250,9 @@ pub struct AppSettings {
     pub inner_gradient_enabled: bool,
     /// The media player's seek bar style.
     pub seekbar_style: SeekbarStyle,
+    pub theme_preset: ThemePreset,
+    /// An accent colour of the user's own; `None` keeps the theme's.
+    pub custom_accent_hex: Option<HexColor>,
     pub features: Features,
 }
 
@@ -249,6 +269,8 @@ impl Default for AppSettings {
             neon_border_enabled: true,
             inner_gradient_enabled: true,
             seekbar_style: SeekbarStyle::default(),
+            theme_preset: ThemePreset::default(),
+            custom_accent_hex: None,
             features: Features::default(),
         }
     }
@@ -339,6 +361,14 @@ impl AppSettings {
                 .get("seekbar_style")
                 .and_then(|value| serde_json::from_value(value.clone()).ok())
                 .unwrap_or(defaults.seekbar_style),
+            theme_preset: root
+                .get("theme_preset")
+                .and_then(|value| serde_json::from_value(value.clone()).ok())
+                .unwrap_or(defaults.theme_preset),
+            custom_accent_hex: root
+                .get("custom_accent_hex")
+                .and_then(Value::as_str)
+                .and_then(HexColor::parse),
             features: Features {
                 notifications: feature("notifications", defaults.features.notifications),
                 hardware_alerts: feature("hardware_alerts", defaults.features.hardware_alerts),
@@ -350,6 +380,7 @@ impl AppSettings {
                 f1_hub: feature("f1_hub", defaults.features.f1_hub),
                 lyrics: feature("lyrics", defaults.features.lyrics),
                 system_hud: feature("system_hud", defaults.features.system_hud),
+                smart_context: feature("smart_context", defaults.features.smart_context),
             },
         }
         .sanitized()
@@ -632,6 +663,22 @@ mod tests {
     }
 
     #[test]
+    fn theme_and_accent_read_and_fall_back() {
+        let paddock =
+            AppSettings::from_json(r##"{ "theme_preset": "paddock-telemetry", "custom_accent_hex": "#e10600" }"##);
+        assert_eq!(paddock.theme_preset, ThemePreset::PaddockTelemetry);
+        assert_eq!(paddock.custom_accent_hex, Some(HexColor::new(0xE1, 0x06, 0x00)));
+
+        let odd = AppSettings::from_json(r#"{ "theme_preset": "neon", "custom_accent_hex": "red" }"#);
+        assert_eq!(odd.theme_preset, ThemePreset::LiquidGlass);
+        assert_eq!(odd.custom_accent_hex, None);
+
+        let json = serde_json::to_value(AppSettings::default()).expect("serializes");
+        assert_eq!(json["theme_preset"], "liquid-glass");
+        assert!(json["custom_accent_hex"].is_null());
+    }
+
+    #[test]
     fn corrupt_text_yields_defaults() {
         assert_eq!(AppSettings::from_json(""), AppSettings::default());
         assert_eq!(AppSettings::from_json("{ not json"), AppSettings::default());
@@ -675,9 +722,12 @@ mod tests {
             neon_border_enabled: false,
             inner_gradient_enabled: false,
             seekbar_style: SeekbarStyle::Wavy,
+            theme_preset: ThemePreset::PaddockTelemetry,
+            custom_accent_hex: Some(HexColor::new(0xE1, 0x06, 0x00)),
             features: Features {
                 f1_hub: false,
                 system_hud: false,
+                smart_context: false,
                 ..Default::default()
             },
         };

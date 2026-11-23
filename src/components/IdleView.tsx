@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from "react";
 import { Moon } from "lucide-react";
 import type { LiveActivity } from "../hooks/useLiveActivity";
 import type { MediaInfo } from "../lib/types";
@@ -17,6 +18,13 @@ interface IdleViewProps {
   lyric?: string | null;
   /** A recording, the focus timer or a routine due soon, shown before the clock. */
   activity?: LiveActivity | null;
+  /**
+   * Told how much of the capsule's width is not the lyric line (padding,
+   * waveform, clock, battery...), so the capsule can grow to fit the line.
+   */
+  onLyricChrome?: (px: number) => void;
+  /** The line is longer than the capsule may grow: it scrolls across once. */
+  isLyricMarquee?: boolean;
 }
 
 /** Purple dot + moon: the capsule will not open or widen by itself. */
@@ -41,8 +49,24 @@ function DndIndicator() {
  * - Media playing: waveform and song title, then clock and battery.
  * A live activity sits just before the clock; the capsule widens for it.
  */
-export function IdleView({ media, isDndEnabled, lyric = null, activity = null }: IdleViewProps) {
+export function IdleView({
+  media,
+  isDndEnabled,
+  lyric = null,
+  activity = null,
+  onLyricChrome,
+  isLyricMarquee = false,
+}: IdleViewProps) {
   const pill = activity ? <LiveActivityPill activity={activity} /> : null;
+  const rowRef = useRef<HTMLDivElement>(null);
+  const slotRef = useRef<HTMLSpanElement>(null);
+  const hasLyric = media !== null && lyric !== null;
+
+  // Measured when the layout around the line can have changed, not per frame.
+  useLayoutEffect(() => {
+    if (!hasLyric || !onLyricChrome || !rowRef.current || !slotRef.current) return;
+    onLyricChrome(rowRef.current.clientWidth - slotRef.current.clientWidth);
+  }, [hasLyric, activity?.kind, onLyricChrome]);
   const clock = (
     <ErrorBoundary label="Clock" fallback={null}>
       <ClockDisplay />
@@ -72,11 +96,17 @@ export function IdleView({ media, isDndEnabled, lyric = null, activity = null }:
   const label = media.artist ? `${media.title} - ${media.artist}` : media.title;
 
   return (
-    <div className="flex h-full w-full items-center gap-2 px-3">
+    <div ref={rowRef} className="flex h-full w-full items-center gap-2 px-3">
       <MediaWaveform isPlaying={media.is_playing} />
       {/* No `title` tooltip here: hovering expands the capsule, and the tooltip would linger over it. */}
       {lyric !== null ? (
-        <LyricLine text={lyric} className="text-[12px] leading-4 font-semibold text-notch-primary" />
+        <span ref={slotRef} className="flex min-w-0 flex-1">
+          <LyricLine
+            text={lyric}
+            marquee={isLyricMarquee}
+            className="text-[12px] leading-4 font-semibold text-notch-primary"
+          />
+        </span>
       ) : (
         <span
           aria-label={`Now playing: ${label}`}

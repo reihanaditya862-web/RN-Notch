@@ -96,6 +96,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   neon_border_enabled: true,
   inner_gradient_enabled: true,
   seekbar_style: "wave",
+  theme_preset: "liquid-glass",
+  custom_accent_hex: null,
   features: {
     notifications: true,
     hardware_alerts: true,
@@ -104,6 +106,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     f1_hub: true,
     lyrics: true,
     system_hud: true,
+    smart_context: true,
   },
 };
 

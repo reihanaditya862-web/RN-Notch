@@ -32,12 +32,14 @@ import { useLyrics } from "../hooks/useLyrics";
 import { useMediaSession } from "../hooks/useMediaSession";
 import { useNativeEvents } from "../hooks/useNativeEvents";
 import { useSystemHud } from "../hooks/useSystemHud";
+import { useCollapsedMemory, useFileMagnet, useMediaFocus } from "../hooks/useSmartContext";
 import { useLiveActivity } from "../hooks/useLiveActivity";
-import { LIVE_ACTIVITY_WIDTH, LiveActivityPill } from "./widgets/LiveActivityPill";
+import { LiveActivityPill, liveActivityWidth } from "./widgets/LiveActivityPill";
 import { usePomodoro } from "../hooks/usePomodoro";
 import { saveSettingsNow, useSettingsSync } from "../hooks/useSettingsSync";
 import { useSystemInfo } from "../hooks/useSystemInfo";
-import { alertSize } from "../lib/alerts";
+import { ALERT_TITLE_FONT, alertSize, textWidth } from "../lib/alerts";
+import { accentOf, applyThemeToDocument, capsuleFill, themeOf } from "../lib/theme";
 import {
   APP_NAME,
   ENTRANCE_OFFSET_Y,
@@ -134,8 +136,8 @@ function topCurveOf(shape: NotchShape): number {
  * cover's colours spread across the outline (one colour gets a lighter
  * middle, two meet in the middle), or plain white without a playing cover.
  */
-function neonGradientStops(palette: string[] | null): [string, string, string] {
-  if (!palette || palette.length === 0) return [NEON_IDLE_COLOR, NEON_IDLE_COLOR, NEON_IDLE_COLOR];
+function neonGradientStops(palette: string[] | null, idle: string = NEON_IDLE_COLOR): [string, string, string] {
+  if (!palette || palette.length === 0) return [idle, idle, idle];
   const [first, second, third] = palette;
   if (!second) return [first, `color-mix(in srgb, ${first} 60%, white)`, first];
   if (!third) return [first, `color-mix(in srgb, ${first} 50%, ${second})`, second];
@@ -325,9 +327,25 @@ export function NotchContainer() {
   const chosenPage = useNotchStore((store) => store.dashboardPage);
   const pageHeight = dashboardHeight(currentPage(dashboardPages(settings), chosenPage).id, settings);
 
-  // A recording, the focus timer or a routine due soon, beside the clock.
+  // A recording, the focus timer, a live F1 session or a routine due soon,
+  // beside the clock.
   const liveActivity = useLiveActivity();
-  const activityWidth = liveActivity ? LIVE_ACTIVITY_WIDTH : 0;
+  const activityWidth = liveActivityWidth(liveActivity);
+
+  // The collapsed capsule grows to show the whole lyric line being sung.
+  // The width is worked out once per line (see the effect below the lyric
+  // hook), from the line's measured text and the room the rest of the
+  // capsule takes (`lyricChrome`, measured by IdleView). It never grows
+  // past 68% of the screen or the window; a longer line scrolls once.
+  const [lyricWidth, setLyricWidth] = useState(0);
+  const [lyricChrome, setLyricChrome] = useState(0);
+  const collapsedBase = NOTCH_SIZES.idleMedia.width + activityWidth;
+  const maxCollapsed = Math.floor(
+    Math.min(window.screen.width * 0.68, window.innerWidth - 24) / Math.max(uiScale, 0.5),
+  );
+  const lyricExtra =
+    state === "idleMedia" && lyricWidth > collapsedBase ? Math.min(lyricWidth, maxCollapsed) - collapsedBase : 0;
+  const isLyricTooLong = state === "idleMedia" && lyricWidth > maxCollapsed;
 
   // Width, height and position come from this one place.
   const shape = useMemo(
@@ -338,15 +356,17 @@ export function NotchContainer() {
         isDrawerOpen,
         alertSize: alertDimensions,
         dashboardHeight: pageHeight,
-        activityWidth,
+        activityWidth: activityWidth + lyricExtra,
       }),
-    [state, settings, wantsRetract, uiScale, isDrawerOpen, alertDimensions, pageHeight, activityWidth],
+    [state, settings, wantsRetract, uiScale, isDrawerOpen, alertDimensions, pageHeight, activityWidth, lyricExtra],
   );
 
   useSettingsSync();
   useForegroundState();
   useNativeEvents();
   useSystemHud();
+  useCollapsedMemory(isHidden || isCollapsedState(state));
+  useFileMagnet(settings.features.smart_context && settings.active_widgets.file_shelf);
   usePomodoro();
   useF1Hub(isReady && settings.features.f1_hub);
   const { isBatterySaver, scalePoll } = useBatterySaver();
@@ -385,7 +405,29 @@ export function NotchContainer() {
   // while the track plays, and turn white when it pauses or has no cover.
   const coverPalette = useAlbumPalette(media);
   const livePalette = media?.is_playing ? coverPalette : null;
-  const neonStops = neonGradientStops(livePalette);
+  // With no cover colours the neon is white, or the accent when the user
+  // picked one (or the theme is Paddock's racing red).
+  const accent = accentOf(settings);
+  const theme = themeOf(settings);
+  const idleNeon =
+    settings.custom_accent_hex || settings.theme_preset === "paddock-telemetry" ? accent : NEON_IDLE_COLOR;
+  const neonStops = neonGradientStops(livePalette, idleNeon);
+
+  // Width of the collapsed capsule for the line being sung: measured only
+  // when the line changes. Paused, between verses or without lyrics, the
+  // capsule goes back to its usual size.
+  useEffect(() => {
+    if (state !== "idleMedia" || !lyric || lyricChrome === 0) {
+      setLyricWidth(0);
+      return;
+    }
+    setLyricWidth(Math.ceil(lyricChrome + textWidth(lyric, ALERT_TITLE_FONT) + 6));
+  }, [state, lyric, lyricChrome]);
+
+  // The theme lives on the document, where the stylesheet can see it.
+  useEffect(() => {
+    applyThemeToDocument(settings);
+  }, [settings]);
   useSystemInfo(
     isHidden
       ? null
@@ -399,9 +441,12 @@ export function NotchContainer() {
   );
 
   // A drop shows the dashboard, so the user sees the file land on the shelf.
+  // A drop opens the dashboard on the shelf, where the files now are.
   useFileDrop(
     useCallback(() => {
-      useNotchStore.getState().setExpanded(true);
+      const store = useNotchStore.getState();
+      store.setDashboardPage("shelf");
+      store.setExpanded(true);
       open();
     }, [open]),
   );
@@ -421,6 +466,7 @@ export function NotchContainer() {
   }, [isHoverOpen]);
 
   const isMediaPlaying = media?.is_playing ?? false;
+  useMediaFocus(media, settings.features.smart_context);
   useEffect(() => {
     useNotchStore.getState().setMediaPlaying(isMediaPlaying);
   }, [isMediaPlaying]);
@@ -819,6 +865,8 @@ export function NotchContainer() {
     ) : (
       <IdleView
         activity={liveActivity}
+        onLyricChrome={setLyricChrome}
+        isLyricMarquee={isLyricTooLong}
         media={state === "idleMedia" ? media : null}
         isDndEnabled={settings.dnd_enabled}
         lyric={lyric}
@@ -855,6 +903,11 @@ export function NotchContainer() {
           y: entranceY,
           scale: entranceScale,
           transformOrigin: "50% 0%",
+          // The glass sheen on the surfaces inside: the cover's colour while a
+          // song plays, else the accent; plain white with the inner glow off.
+          ...({
+            "--glass-tint": settings.inner_gradient_enabled ? (livePalette ? neonStops[0] : accent) : "#ffffff",
+          } as Record<string, string>),
           ...(livePalette && {
             "--notch-accent-1": neonStops[0],
             "--notch-accent-2": neonStops[1],
@@ -890,11 +943,7 @@ export function NotchContainer() {
               ))}
             </linearGradient>
           </defs>
-          <motion.path
-            d={fillPath}
-            fill={`rgb(9 9 11 / ${settings.opacity})`}
-            style={{ transition: "fill 200ms ease" }}
-          />
+          <motion.path d={fillPath} fill={capsuleFill(settings)} style={{ transition: "fill 200ms ease" }} />
           {/*
             Soft glow behind the neon line; removed under battery saver and
             when the neon border is off in Settings. After a pop-in it pulses
@@ -918,7 +967,7 @@ export function NotchContainer() {
           <motion.path
             d={strokePath}
             fill="none"
-            stroke={cursorOver ? "var(--notch-border-hover)" : "var(--notch-border)"}
+            stroke={cursorOver ? theme.edgeHover : theme.edge}
             strokeWidth={BORDER_WIDTH}
             className="notch-outline"
           />
@@ -994,13 +1043,29 @@ export function NotchContainer() {
           className="pointer-events-none absolute inset-0 transition-opacity duration-200"
         />
 
-        {/* Clips the content to the capsule. */}
+        {/*
+          Clips the content to the capsule. It also carries the theme's inner
+          surface: Liquid Glass gets its specular rim (a bright line along the
+          top edge in island mode, where there is an edge, and a faint inner
+          glow all round), Paddock Telemetry its fine grid. Both are static.
+        */}
         <motion.div
           style={{
             borderTopLeftRadius: clipTopRadius,
             borderTopRightRadius: clipTopRadius,
             borderBottomLeftRadius: bottomRadius,
             borderBottomRightRadius: bottomRadius,
+            ...(settings.theme_preset === "liquid-glass" && {
+              boxShadow:
+                settings.display_mode === "island"
+                  ? "inset 0 1px 0 rgb(255 255 255 / 0.22), inset 0 0 18px rgb(255 255 255 / 0.04)"
+                  : "inset 0 0 18px rgb(255 255 255 / 0.04)",
+            }),
+            ...(settings.theme_preset === "paddock-telemetry" && {
+              backgroundImage:
+                "linear-gradient(rgb(255 255 255 / 0.035) 1px, transparent 1px), linear-gradient(90deg, rgb(255 255 255 / 0.035) 1px, transparent 1px)",
+              backgroundSize: "14px 14px",
+            }),
           }}
           className="absolute inset-0 overflow-hidden"
         >

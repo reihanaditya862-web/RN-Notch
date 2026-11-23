@@ -27,7 +27,8 @@ export interface Lyrics {
 const API = "https://lrclib.net/api";
 /** LRCLIB's lengths are whole seconds; a few seconds either way still match. */
 const DURATION_TOLERANCE_S = 4;
-const CACHE_LIMIT = 30;
+/** Only the current song's lyrics are kept; a new song replaces them. */
+const CACHE_LIMIT = 1;
 
 /** Track key -> its lyrics, or null when LRCLIB has none. In memory only. */
 const cache = new Map<string, Lyrics | null>();

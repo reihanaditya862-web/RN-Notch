@@ -183,8 +183,8 @@ export function isDuplicate(a: Alert, b: Alert): boolean {
 
 let measureContext: CanvasRenderingContext2D | null = null;
 
-/** Width of a line of text in px, as the pop-up will draw it. */
-function textWidth(text: string, font: string): number {
+/** Width of a line of text in px, as the capsule will draw it. */
+export function textWidth(text: string, font: string): number {
   if (typeof document === "undefined") return text.length * 6.5;
   measureContext ??= document.createElement("canvas").getContext("2d");
   if (!measureContext) return text.length * 6.5;

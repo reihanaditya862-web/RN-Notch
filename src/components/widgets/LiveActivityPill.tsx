@@ -9,6 +9,12 @@ import { DigitText } from "./DigitText";
 /** Room the pill takes in the collapsed capsule, in px (see `getNotchShape`). */
 export const LIVE_ACTIVITY_WIDTH = 72;
 
+/** Room for an activity's pill; an F1 session label needs a little more. */
+export function liveActivityWidth(activity: LiveActivity | null): number {
+  if (!activity) return 0;
+  return activity.kind === "f1" ? 100 : LIVE_ACTIVITY_WIDTH;
+}
+
 const RING_RADIUS = 5;
 const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
 
@@ -76,6 +82,16 @@ function RecordingContent({ startedAt }: { startedAt: number }) {
   );
 }
 
+/** A live F1 session: a red pulse and the session, e.g. "F1 QUALI". */
+function F1Content({ label }: { label: string }) {
+  return (
+    <>
+      <span aria-hidden="true" className="notch-pulse h-2 w-2 shrink-0 rounded-full bg-[#E10600]" />
+      <span className="whitespace-nowrap">{label}</span>
+    </>
+  );
+}
+
 function ScheduleContent({ startsAt }: { startsAt: number }) {
   const now = useTick(15_000);
   const minutes = Math.max(0, Math.ceil((startsAt - now) / 60_000));
@@ -93,6 +109,8 @@ function describe(activity: LiveActivity): { label: string; page: DashboardPageI
       return { label: "Screen recording in progress", page: "tools" };
     case "pomodoro":
       return { label: activity.phase === "break" ? "Break timer" : "Focus timer", page: "tools" };
+    case "f1":
+      return { label: `Live now: ${activity.session}`, page: "f1" };
     case "schedule":
       return { label: `Next: ${activity.title}`, page: "calendar" };
   }
@@ -117,6 +135,8 @@ export function LiveActivityPill({
       <RecordingContent startedAt={activity.startedAt} />
     ) : activity.kind === "pomodoro" ? (
       <PomodoroContent />
+    ) : activity.kind === "f1" ? (
+      <F1Content label={activity.label} />
     ) : (
       <ScheduleContent startsAt={activity.startsAt} />
     );

@@ -1,6 +1,6 @@
 [package]
 name = "windows-dynamic-island"
-version = "1.1.0"
+version = "1.2.0"
 description = "RN Notch - a Dynamic Island / notch for Windows"
 authors = ["RN"]
 edition = "2024"
@@ -29,12 +29,19 @@ sysinfo = { version = "0.32", default-features = false, features = ["system"] }
 
 # Windows-only APIs. Same version Tauri itself depends on, so only one copy is compiled.
 [target.'cfg(windows)'.dependencies]
+# Allocator with less heap fragmentation than the default for a long-running process.
+mimalloc = { version = "0.1", default-features = false }
+# WebView2 interfaces beyond what Tauri wraps (the memory target); the same
+# version Tauri itself uses, so the types are shared.
+webview2-com = "0.39"
 # For declaring IPolicyConfig (default audio device), which the SDK does not publish.
 windows-core = "0.62"
 windows = { version = "0.62", features = [
     # Media session (SMTC)
     "Media_Control",
     "Storage_Streams",
+    # Album art downscaling (Windows imaging codecs)
+    "Graphics_Imaging",
     "Foundation",
     # Master volume (Core Audio)
     "Win32_Media_Audio",
@@ -87,6 +94,6 @@ windows = { version = "0.62", features = [
 [profile.release]
 codegen-units = 1
 lto = true
-opt-level = 3
+opt-level = "z"
 panic = "abort"
 strip = true

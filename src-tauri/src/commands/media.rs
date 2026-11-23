@@ -19,7 +19,10 @@ use windows::Media::Control::{
 };
 use windows::Media::MediaPlaybackAutoRepeatMode as RepeatMode;
 use windows::Foundation::TypedEventHandler;
-use windows::Storage::Streams::DataReader;
+use windows::Graphics::Imaging::{BitmapDecoder, BitmapEncoder, BitmapInterpolationMode};
+use windows::Storage::Streams::{
+    DataReader, IRandomAccessStream, IRandomAccessStreamWithContentType, InMemoryRandomAccessStream,
+};
 use windows::core::{Interface, Ref};
 
 use super::background::ensure_com;
@@ -32,6 +35,11 @@ const WINDOWS_TO_UNIX_EPOCH_SECS: i64 = 11_644_473_600;
 
 /// Thumbnails larger than this are ignored instead of being sent to the webview.
 const MAX_ART_BYTES: u64 = 4 * 1024 * 1024;
+
+/// The cover's shorter side after downscaling, in px. The capsule draws it
+/// at 36 px and the lyrics page at 104 px; a 1000 px original would only
+/// cost the webview memory for pixels nobody sees.
+const ART_SIZE_PX: u32 = 128;
 
 /// Snapshot of the active media session, serialized to the frontend.
 #[derive(Debug, Clone, Serialize)]
@@ -285,14 +293,10 @@ fn album_art(
         return Some((id, None));
     }
 
-    let reader = DataReader::CreateDataReader(&stream.GetInputStreamAt(0).ok()?).ok()?;
-    let loaded = reader.LoadAsync(size as u32).ok()?.join().ok()? as usize;
-    if loaded == 0 {
-        return None;
-    }
-
-    let mut bytes = vec![0u8; loaded];
-    reader.ReadBytes(&mut bytes).ok()?;
+    let bytes = match downscaled_art(&stream) {
+        Some(bytes) => bytes,
+        None => read_all(&stream.cast::<IRandomAccessStream>().ok()?, size)?,
+    };
 
     let url = format!(
         "data:{};base64,{}",
@@ -300,6 +304,50 @@ fn album_art(
         BASE64.encode(&bytes)
     );
     Some((id, Some(url)))
+}
+
+/// Every byte of a stream, from the start.
+fn read_all(stream: &IRandomAccessStream, size: u64) -> Option<Vec<u8>> {
+    let size = u32::try_from(size).ok()?;
+    let reader = DataReader::CreateDataReader(&stream.GetInputStreamAt(0).ok()?).ok()?;
+    let loaded = reader.LoadAsync(size).ok()?.join().ok()? as usize;
+    if loaded == 0 {
+        return None;
+    }
+    let mut bytes = vec![0u8; loaded];
+    reader.ReadBytes(&mut bytes).ok()?;
+    Some(bytes)
+}
+
+/// The cover re-encoded (in its own format) with its shorter side at
+/// `ART_SIZE_PX`, so a square cover becomes exactly 128 x 128 and a wide
+/// video thumbnail keeps its shape. Windows' own imaging codecs do the work.
+/// `None` when the cover is already that small or cannot be decoded; the
+/// original is sent then.
+fn downscaled_art(stream: &IRandomAccessStreamWithContentType) -> Option<Vec<u8>> {
+    let source: IRandomAccessStream = stream.cast().ok()?;
+    let decoder = BitmapDecoder::CreateAsync(&source).ok()?.join().ok()?;
+    let (width, height) = (decoder.PixelWidth().ok()?, decoder.PixelHeight().ok()?);
+    let shorter = width.min(height);
+    if shorter <= ART_SIZE_PX {
+        return None;
+    }
+    let scale = f64::from(ART_SIZE_PX) / f64::from(shorter);
+    let scaled = |side: u32| ((f64::from(side) * scale).round() as u32).max(1);
+
+    let output = InMemoryRandomAccessStream::new().ok()?;
+    let encoder = BitmapEncoder::CreateForTranscodingAsync(&output, &decoder)
+        .ok()?
+        .join()
+        .ok()?;
+    let transform = encoder.BitmapTransform().ok()?;
+    transform.SetScaledWidth(scaled(width)).ok()?;
+    transform.SetScaledHeight(scaled(height)).ok()?;
+    transform.SetInterpolationMode(BitmapInterpolationMode::Fant).ok()?;
+    encoder.FlushAsync().ok()?.join().ok()?;
+
+    let size = output.Size().ok()?;
+    read_all(&output.cast::<IRandomAccessStream>().ok()?, size)
 }
 
 /// Turns an app user model id into a short display name.

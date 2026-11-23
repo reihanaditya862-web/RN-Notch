@@ -28,6 +28,7 @@ import type {
   ScaleOption,
   ScheduleItem,
   SeekbarStyle,
+  ThemePreset,
   ShelfFile,
   SystemInfo,
 } from "../lib/types";
@@ -136,6 +137,9 @@ interface NotchStore extends StateInputs {
   showHud: (hud: HudReading) => void;
   setRecording: (recording: { startedAt: number } | null) => void;
   setSeekbarStyle: (style: SeekbarStyle) => void;
+  setThemePreset: (preset: ThemePreset) => void;
+  /** The user's accent colour ("#RRGGBB"), or null for the theme's own. */
+  setCustomAccent: (color: string | null) => void;
   /** Switches the neon border or the inner gradient (Settings). */
   setVisualEffect: (effect: "neon_border_enabled" | "inner_gradient_enabled", on: boolean) => void;
   /** Drops every pop-up (the capsule went off screen; they would be stale later). */
@@ -240,6 +244,12 @@ const SEEKBAR_STYLES: readonly SeekbarStyle[] = ["standard", "wave", "slim", "wa
 
 function isSeekbarStyle(value: unknown): value is SeekbarStyle {
   return SEEKBAR_STYLES.includes(value as SeekbarStyle);
+}
+
+const THEME_PRESETS: readonly ThemePreset[] = ["liquid-glass", "pure-obsidian", "paddock-telemetry"];
+
+function isThemePreset(value: unknown): value is ThemePreset {
+  return THEME_PRESETS.includes(value as ThemePreset);
 }
 
 /** Whether a pop-up may be shown now (see `pushAlert`). */
@@ -363,6 +373,17 @@ export const useNotchStore = create<NotchStore>()(
         setSeekbarStyle: (style) => {
           if (isSeekbarStyle(style) && style !== get().settings.seekbar_style) {
             patchSettings({ seekbar_style: style });
+          }
+        },
+        setThemePreset: (preset) => {
+          if (isThemePreset(preset) && preset !== get().settings.theme_preset) {
+            patchSettings({ theme_preset: preset });
+          }
+        },
+        setCustomAccent: (color) => {
+          const next = color === null ? null : isHexColor(color) ? color.toUpperCase() : undefined;
+          if (next !== undefined && next !== get().settings.custom_accent_hex) {
+            patchSettings({ custom_accent_hex: next });
           }
         },
         setVisualEffect: (effect, on) => {
@@ -508,6 +529,13 @@ export const useNotchStore = create<NotchStore>()(
               seekbar_style: isSeekbarStyle(settings.seekbar_style)
                 ? settings.seekbar_style
                 : DEFAULT_SETTINGS.seekbar_style,
+              theme_preset: isThemePreset(settings.theme_preset)
+                ? settings.theme_preset
+                : DEFAULT_SETTINGS.theme_preset,
+              custom_accent_hex:
+                typeof settings.custom_accent_hex === "string" && isHexColor(settings.custom_accent_hex)
+                  ? settings.custom_accent_hex.toUpperCase()
+                  : null,
               features: { ...DEFAULT_SETTINGS.features, ...settings.features },
             },
           }),

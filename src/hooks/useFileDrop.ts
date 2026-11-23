@@ -24,6 +24,8 @@ export function useFileDrop(onDrop: (added: number) => void): void {
 
     let disposed = false;
     let unlisten: (() => void) | undefined;
+    /** The drag in progress carries files. */
+    let hasFiles = false;
 
     getCurrentWebview()
       .onDragDropEvent((event) => {
@@ -39,13 +41,19 @@ export function useFileDrop(onDrop: (added: number) => void): void {
 
         switch (payload.type) {
           case "enter":
+            // Only files: text or a link dragged in is not for the shelf.
+            hasFiles = payload.paths.length > 0;
+            store.setDragOver(hasFiles);
+            break;
           case "over":
-            store.setDragOver(true);
+            if (hasFiles) store.setDragOver(true);
             break;
           case "leave":
+            hasFiles = false;
             store.setDragOver(false);
             break;
           case "drop": {
+            hasFiles = false;
             const { added } = store.addShelfFiles(payload.paths);
             store.setDragOver(false);
             onDropRef.current(added);

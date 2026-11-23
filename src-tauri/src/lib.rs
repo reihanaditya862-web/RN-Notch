@@ -25,18 +25,20 @@ use commands::settings::{self, SETTINGS_DIR, SETTINGS_FILE, SettingsState};
 use commands::system::{self, SystemState};
 use commands::window_detector::{self, ForegroundWatch};
 use commands::{
-    apps, audio, autostart, clipboard, events, hardware, http, hud, mixer, picker, screen_tools,
+    apps, audio, autostart, clipboard, events, hardware, http, hud, memory, mixer, picker, screen_tools,
 };
 
 /// Name shown to the user (tray tooltip, menu texts).
 pub(crate) const APP_NAME: &str = "RN Notch";
 
-/// WebView2 arguments of every window: the defaults Tauri would pass, plus a
-/// cap on the JavaScript heap so garbage collection runs early. Must match
+/// WebView2 arguments of every window: the defaults Tauri would pass, a
+/// 64 MB cap on the JavaScript heap (garbage collection runs early), a 1 MB
+/// disk cache with no shader cache, one renderer process for both windows,
+/// and none of the browser's own background work (extensions, plugins,
+/// component updates, background networking). Must match
 /// `additionalBrowserArgs` in `tauri.conf.json` exactly, because WebView2
 /// windows that share a data folder must also share their arguments.
-pub(crate) const BROWSER_ARGS: &str =
-    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --js-flags=--max-old-space-size=96";
+pub(crate) const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --js-flags=--max-old-space-size=64 --disk-cache-size=1048576 --disable-gpu-shader-disk-cache --renderer-process-limit=1 --disable-extensions --disable-plugins --disable-background-networking --disable-component-update";
 
 /// Label of the notch window, as declared in `tauri.conf.json`.
 pub(crate) const NOTCH_LABEL: &str = "notch";
@@ -59,8 +61,9 @@ const CURSOR_POLL_FAR: Duration = Duration::from_millis(40);
 const NEAR_MARGIN_PX: i32 = 160;
 
 /// Window size at 100% scale, in logical px; keep in step with the `width`
-/// and `height` in `tauri.conf.json`.
-const BASE_WINDOW_WIDTH: f64 = 520.0;
+/// and `height` in `tauri.conf.json`. Wider than the dashboard so the
+/// collapsed capsule can grow to fit a long lyric line.
+const BASE_WINDOW_WIDTH: f64 = 760.0;
 const BASE_WINDOW_HEIGHT: f64 = 440.0;
 
 /// Range of capsule scales the window can be sized for.
@@ -180,6 +183,9 @@ struct ClickThroughState {
     /// The frontend wants to hear about clicks that land outside the shapes,
     /// so it can close an open menu or panel.
     watch_outside_clicks: AtomicBool,
+    /// Something dragged from another app toward the capsule makes the window
+    /// take it (see `check_cursor`). Off with the shelf or smart context off.
+    magnet_enabled: AtomicBool,
 }
 
 impl ClickThroughState {
@@ -309,6 +315,8 @@ struct CursorProbe {
     hovering: bool,
     /// The cursor is on a shape that takes the mouse.
     interactive: bool,
+    /// The cursor is within `MAGNET_MARGIN` of the capsule.
+    in_magnet_zone: bool,
     /// The cursor is on or close to the notch window.
     near: bool,
 }
@@ -319,6 +327,11 @@ struct WatcherMemory {
     button_was_down: bool,
     was_hovering: bool,
     was_watching: bool,
+    /// The cursor was in the magnet zone on the previous step.
+    was_in_magnet_zone: bool,
+    /// The left button was already held when the cursor arrived in the
+    /// magnet zone, and still is: a drag that started in another app.
+    dragging_in: bool,
 }
 
 /// Reads the cursor straight from Win32. These calls are cheap and do not go
@@ -349,10 +362,18 @@ fn probe_cursor(hwnd: HWND, regions: &[HitRegion]) -> Option<CursorProbe> {
         hovering = true;
         interactive |= !region.passive;
     }
+    // The first shape is the capsule; the magnet zone is its box plus a margin.
+    let in_magnet_zone = regions.first().is_some_and(|capsule| {
+        x >= capsule.x - MAGNET_MARGIN
+            && x < capsule.x + capsule.width + MAGNET_MARGIN
+            && y >= capsule.y - MAGNET_MARGIN
+            && y < capsule.y + capsule.height + MAGNET_MARGIN
+    });
 
     Some(CursorProbe {
         hovering,
         interactive,
+        in_magnet_zone,
         near,
     })
 }
@@ -376,6 +397,21 @@ fn spawn_cursor_watcher(window: WebviewWindow) -> Result<(), Box<dyn std::error:
         .name("notch-cursor-watcher".into())
         .spawn(move || watch_cursor(window, raw_hwnd))?;
     Ok(())
+}
+
+/// True while the left mouse button is held down. Read only for the magnet
+/// (see `check_cursor`); it never produces input.
+fn left_button_down() -> bool {
+    unsafe { GetAsyncKeyState(i32::from(VK_LBUTTON.0)) < 0 }
+}
+
+/// Room around the capsule (logical px) in which a file dragged in pulls it open.
+const MAGNET_MARGIN: f64 = 56.0;
+
+/// Switches the file magnet (see `check_cursor`) on or off.
+#[tauri::command]
+fn set_magnet_enabled(state: State<'_, ClickThroughState>, enabled: bool) {
+    state.magnet_enabled.store(enabled, Ordering::Relaxed);
 }
 
 /// True while the left, right or middle mouse button is held down, anywhere
@@ -431,9 +467,24 @@ fn check_cursor(window: &WebviewWindow, hwnd: HWND, memory: &mut WatcherMemory) 
         return watching;
     };
 
-    // The window takes the mouse only on a shape that wants it; a passive
-    // shape leaves click-through on.
-    let _ = state.apply(window, !probe.interactive);
+    // The magnet: a file dragged from Explorer (or anything dragged from
+    // another app) toward the capsule. The left button is read only while the
+    // cursor is in the zone just around the capsule; held already when it
+    // arrives means the drag began elsewhere. While it lasts the window takes
+    // the mouse, so Windows offers it the drop and the capsule opens as the
+    // shelf. Pressing the button inside the zone (a click, a tab dragged
+    // under the notch) never counts.
+    let magnet_on = state.magnet_enabled.load(Ordering::Relaxed);
+    let in_zone = magnet_on && probe.in_magnet_zone;
+    memory.dragging_in = in_zone && {
+        let left = left_button_down();
+        if memory.was_in_magnet_zone { memory.dragging_in && left } else { left }
+    };
+    memory.was_in_magnet_zone = in_zone;
+
+    // The window takes the mouse only on a shape that wants it (or for a
+    // drag coming in); a passive shape leaves click-through on.
+    let _ = state.apply(window, !(probe.interactive || memory.dragging_in));
 
     // Hover is announced on every change, and again when a resync is pending.
     let resync = state.resync.swap(false, Ordering::Relaxed);
@@ -464,6 +515,7 @@ pub fn run() {
             ignoring: Mutex::new(true),
             resync: AtomicBool::new(false),
             watch_outside_clicks: AtomicBool::new(false),
+            magnet_enabled: AtomicBool::new(false),
         })
         .manage(MediaState::default())
         .manage(SystemState::default())
@@ -505,6 +557,8 @@ pub fn run() {
             picker::finish_color_pick,
             screen_tools::launch_snip,
             screen_tools::snipping_tool_status,
+            memory::set_memory_mode,
+            set_magnet_enabled,
             screen_tools::start_file_drag,
             apps::ai_shortcuts,
             apps::launch_ai,

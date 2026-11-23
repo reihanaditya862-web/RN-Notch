@@ -9,6 +9,7 @@ pub mod http;
 pub mod hud;
 pub mod icons;
 pub mod media;
+pub mod memory;
 pub mod mixer;
 pub mod notifications;
 pub mod picker;
