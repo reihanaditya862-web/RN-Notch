@@ -19,6 +19,15 @@ import { ToolsPage } from "./pages/ToolsPage";
 const WHEEL_STEP = 45;
 const WHEEL_COOLDOWN_MS = 280;
 
+/** How far a page travels as it slides in or out, and the spring it rides. */
+const PAGE_TRAVEL = 36;
+const PAGE_SPRING = { type: "spring", stiffness: 340, damping: 32, mass: 0.8 } as const;
+const PAGE_SLIDE = {
+  enter: (direction: number) => ({ x: direction * PAGE_TRAVEL, opacity: 0 }),
+  center: { x: 0, opacity: 1 },
+  exit: (direction: number) => ({ x: direction * -PAGE_TRAVEL, opacity: 0 }),
+};
+
 /** A drag starting on any of these is the control's own, never a page swipe. */
 const SWIPE_IGNORE =
   "button, a, input, textarea, select, label, [role=slider], [role=spinbutton], [role=radio], [role=switch], [draggable=true]";
@@ -63,9 +72,15 @@ export function Dashboard({
   const index = pages.indexOf(page);
 
   // Slide direction: from the right when moving forward.
-  const previousIndex = useRef(index);
-  const direction = index >= previousIndex.current ? 1 : -1;
-  previousIndex.current = index;
+  // Direction of the last page change: kept until the page changes again,
+  // so a re-render while a page is sliding never turns it around.
+  const lastIndex = useRef(index);
+  const lastDirection = useRef(1);
+  if (index !== lastIndex.current) {
+    lastDirection.current = index > lastIndex.current ? 1 : -1;
+    lastIndex.current = index;
+  }
+  const direction = lastDirection.current;
 
   const wheel = useRef({ travel: 0, last: 0 });
   /** Turns one page forward (1) or back (-1), once per cooldown. */
@@ -129,23 +144,25 @@ export function Dashboard({
       className="flex h-full w-full flex-col"
       style={{ padding: DASHBOARD.padding, paddingBottom: DASHBOARD.padding - 4, gap: 6 }}
     >
-      <div className="relative min-h-0 flex-1">
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        {/*
+          A carousel: the new page pushes in from the side it comes from while
+          the old one slides out the other way, both on one spring (transform
+          and opacity only).
+        */}
         <AnimatePresence initial={false} custom={direction}>
           <motion.div
             key={page.id}
             custom={direction}
-            className="absolute inset-0"
-            initial={{ opacity: 0, x: reducedMotion ? 0 : direction * 36 }}
-            animate={{
-              opacity: 1,
-              x: 0,
-              // The page arrives from the side it was swiped from, on a spring.
-              transition: {
-                x: reducedMotion ? { duration: 0 } : { type: "spring", stiffness: 420, damping: 36, mass: 0.8 },
-                opacity: { duration: 0.18, ease: "easeOut" },
-              },
+            variants={PAGE_SLIDE}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{
+              x: reducedMotion ? { duration: 0 } : PAGE_SPRING,
+              opacity: { duration: 0.2, ease: "easeOut" },
             }}
-            exit={{ opacity: 0, x: reducedMotion ? 0 : direction * -28, transition: { duration: 0.14, ease: "easeIn" } }}
+            className="absolute inset-0"
           >
             <ErrorBoundary label={page.label} resetKey={page.id}>
               {content[page.id]()}
@@ -163,19 +180,30 @@ export function Dashboard({
           {pages.map((candidate) => {
             const isCurrent = candidate.id === page.id;
             return (
-              <button
+              <motion.button
                 key={candidate.id}
                 type="button"
+                layout
+                transition={reducedMotion ? { duration: 0 } : PAGE_SPRING}
                 onClick={() => setDashboardPage(candidate.id)}
                 aria-label={candidate.label}
                 aria-current={isCurrent ? "page" : undefined}
                 title={`${candidate.label} (scroll to switch)`}
                 className={[
-                  "h-[5px] rounded-full transition-[width,background-color] duration-200",
+                  "relative h-[5px] rounded-full transition-colors duration-200",
                   "outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-notch-focus",
-                  isCurrent ? "w-4 bg-notch-primary" : "w-[5px] bg-white/25 hover:bg-white/50",
+                  isCurrent ? "w-4" : "w-[5px] bg-white/25 hover:bg-white/50",
                 ].join(" ")}
-              />
+              >
+                {/* One active dot that glides and stretches to the page on show. */}
+                {isCurrent && (
+                  <motion.span
+                    layoutId="activeNotchDot"
+                    transition={reducedMotion ? { duration: 0 } : PAGE_SPRING}
+                    className="absolute inset-0 rounded-full bg-notch-primary"
+                  />
+                )}
+              </motion.button>
             );
           })}
         </nav>

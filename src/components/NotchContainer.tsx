@@ -59,6 +59,7 @@ import {
   SPRING_ENTRANCE,
   SPRING_EXPAND,
   SPRING_EXPANDED,
+  SPRING_LYRIC,
   SYSTEM_POLL_EXPANDED_MS,
   SYSTEM_POLL_IDLE_MS,
   TWEEN_REDUCED,
@@ -339,13 +340,19 @@ export function NotchContainer() {
   // past 68% of the screen or the window; a longer line scrolls once.
   const [lyricWidth, setLyricWidth] = useState(0);
   const [lyricChrome, setLyricChrome] = useState(0);
-  const collapsedBase = NOTCH_SIZES.idleMedia.width + activityWidth;
+  // While a line is sung the clock and battery step aside, so the capsule
+  // is just the waveform and the line: it lengthens and shortens with every
+  // line, between the plain collapsed width and 68% of the screen.
   const maxCollapsed = Math.floor(
     Math.min(window.screen.width * 0.68, window.innerWidth - 24) / Math.max(uiScale, 0.5),
   );
-  const lyricExtra =
-    state === "idleMedia" && lyricWidth > collapsedBase ? Math.min(lyricWidth, maxCollapsed) - collapsedBase : 0;
-  const isLyricTooLong = state === "idleMedia" && lyricWidth > maxCollapsed;
+  const isLyricFocus = state === "idleMedia" && lyricWidth > 0;
+  const lyricTarget = isLyricFocus
+    ? Math.min(Math.max(lyricWidth, NOTCH_SIZES.idle.width + activityWidth), maxCollapsed)
+    : null;
+  // Extra width over the plain "idle with media" size (negative for a short line).
+  const collapsedDelta = lyricTarget !== null ? lyricTarget - NOTCH_SIZES.idleMedia.width : activityWidth;
+  const isLyricTooLong = isLyricFocus && lyricWidth > maxCollapsed;
 
   // Width, height and position come from this one place.
   const shape = useMemo(
@@ -356,9 +363,9 @@ export function NotchContainer() {
         isDrawerOpen,
         alertSize: alertDimensions,
         dashboardHeight: pageHeight,
-        activityWidth: activityWidth + lyricExtra,
+        activityWidth: collapsedDelta,
       }),
-    [state, settings, wantsRetract, uiScale, isDrawerOpen, alertDimensions, pageHeight, activityWidth, lyricExtra],
+    [state, settings, wantsRetract, uiScale, isDrawerOpen, alertDimensions, pageHeight, collapsedDelta],
   );
 
   useSettingsSync();
@@ -703,9 +710,18 @@ export function NotchContainer() {
   const topCurve = useMotionValue(topCurveOf(shape));
   const bottomRadius = useMotionValue(shape.bottomRadius);
 
+  // The state the capsule last animated in: a width change that stays in
+  // "idle with media" is the lyric pill following its line.
+  const settledState = useRef(state);
+  useEffect(() => {
+    settledState.current = state;
+  }, [state]);
+  const isLyricResize = state === "idleMedia" && settledState.current === "idleMedia";
+
   // Battery saver and reduced motion both trade the springs for a short tween.
-  const spring =
-    state === "idle"
+  const spring = isLyricResize
+    ? SPRING_LYRIC
+    : state === "idle"
       ? SPRING_COLLAPSE
       : state === "expanded" || state === "settings"
         ? SPRING_EXPANDED

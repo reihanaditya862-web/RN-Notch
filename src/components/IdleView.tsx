@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { Moon } from "lucide-react";
 import type { LiveActivity } from "../hooks/useLiveActivity";
 import type { MediaInfo } from "../lib/types";
@@ -19,13 +20,18 @@ interface IdleViewProps {
   /** A recording, the focus timer or a routine due soon, shown before the clock. */
   activity?: LiveActivity | null;
   /**
-   * Told how much of the capsule's width is not the lyric line (padding,
-   * waveform, clock, battery...), so the capsule can grow to fit the line.
+   * Told how much of the capsule's width is not the lyric line while one is
+   * sung (padding, the waveform, a live activity), so the capsule can be
+   * sized to the line.
    */
   onLyricChrome?: (px: number) => void;
   /** The line is longer than the capsule may grow: it scrolls across once. */
   isLyricMarquee?: boolean;
 }
+
+/** The row's side padding and gap (`px-3`, `gap-2`), for the width sums. */
+const ROW_PADDING = 12;
+const ROW_GAP = 8;
 
 /** Purple dot + moon: the capsule will not open or widen by itself. */
 function DndIndicator() {
@@ -47,6 +53,8 @@ function DndIndicator() {
  *
  * - No media: clock on the left, battery on the right.
  * - Media playing: waveform and song title, then clock and battery.
+ * - A synced lyric line being sung: only the waveform and the line; the
+ *   clock and battery fade out and come back for a pause or when it stops.
  * A live activity sits just before the clock; the capsule widens for it.
  */
 export function IdleView({
@@ -58,15 +66,19 @@ export function IdleView({
   isLyricMarquee = false,
 }: IdleViewProps) {
   const pill = activity ? <LiveActivityPill activity={activity} /> : null;
-  const rowRef = useRef<HTMLDivElement>(null);
   const slotRef = useRef<HTMLSpanElement>(null);
-  const hasLyric = media !== null && lyric !== null;
+  const pillRef = useRef<HTMLSpanElement>(null);
+  // A line being sung (not a pause between verses): the capsule focuses on
+  // the waveform and the line, and the clock and battery step aside.
+  const isLyricFocus = media !== null && Boolean(lyric);
 
-  // Measured when the layout around the line can have changed, not per frame.
+  // Measured when the layout around the line can change, not per frame:
+  // the room before the line, the right padding, and a live activity.
   useLayoutEffect(() => {
-    if (!hasLyric || !onLyricChrome || !rowRef.current || !slotRef.current) return;
-    onLyricChrome(rowRef.current.clientWidth - slotRef.current.clientWidth);
-  }, [hasLyric, activity?.kind, onLyricChrome]);
+    if (!isLyricFocus || !onLyricChrome || !slotRef.current) return;
+    const pill = pillRef.current ? pillRef.current.offsetWidth + ROW_GAP : 0;
+    onLyricChrome(slotRef.current.offsetLeft + ROW_PADDING + pill);
+  }, [isLyricFocus, activity?.kind, onLyricChrome]);
   const clock = (
     <ErrorBoundary label="Clock" fallback={null}>
       <ClockDisplay />
@@ -96,7 +108,7 @@ export function IdleView({
   const label = media.artist ? `${media.title} - ${media.artist}` : media.title;
 
   return (
-    <div ref={rowRef} className="flex h-full w-full items-center gap-2 px-3">
+    <div className="relative flex h-full w-full items-center gap-2 px-3">
       <MediaWaveform isPlaying={media.is_playing} />
       {/* No `title` tooltip here: hovering expands the capsule, and the tooltip would linger over it. */}
       {lyric !== null ? (
@@ -115,9 +127,22 @@ export function IdleView({
           {media.title}
         </span>
       )}
-      {pill}
-      {clock}
-      {battery}
+      {pill && <span ref={pillRef} className="flex shrink-0">{pill}</span>}
+      <AnimatePresence initial={false}>
+        {!isLyricFocus && (
+          <motion.span
+            key="status"
+            initial={{ opacity: 0, scale: 0.9, width: 0 }}
+            animate={{ opacity: 1, scale: 1, width: "auto" }}
+            exit={{ opacity: 0, scale: 0.9, width: 0 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="flex shrink-0 items-center gap-2 overflow-hidden"
+          >
+            {clock}
+            {battery}
+          </motion.span>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

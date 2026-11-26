@@ -34,8 +34,8 @@ function MarqueeText({ text }: { text: string }) {
 }
 
 /**
- * One line of lyrics. A new line slides up while the old one fades out
- * (transform and opacity only). An empty line is a pause between verses
+ * One line of lyrics. A new line slides up 6px while the old one fades out
+ * (220 ms, transform and opacity only), in step with the capsule's width. An empty line is a pause between verses
  * and shows as a note. With `marquee`, a line too long for its room scrolls
  * across once instead of ending in an ellipsis.
  */
@@ -56,10 +56,10 @@ export function LyricLine({
       <AnimatePresence initial={false} mode="popLayout">
         <motion.span
           key={shown}
-          initial={{ opacity: 0, y: reducedMotion ? 0 : 8 }}
+          initial={{ opacity: 0, y: reducedMotion ? 0 : 6 }}
           animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: reducedMotion ? 0 : -8 }}
-          transition={{ duration: 0.28, ease: "easeOut" }}
+          exit={{ opacity: 0, y: reducedMotion ? 0 : -6 }}
+          transition={{ duration: 0.22, ease: "easeOut" }}
           className={`block ${scrolls ? "whitespace-nowrap" : "truncate"} ${className}`}
         >
           {scrolls ? <MarqueeText text={shown} /> : shown}

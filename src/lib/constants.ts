@@ -178,6 +178,17 @@ export const SPRING_EXPAND: Transition = {
 /** Opening the dashboard: the same curve as any other growth. */
 export const SPRING_EXPANDED: Transition = SPRING_EXPAND;
 
+/**
+ * The lyric pill following the sung line: a critically damped spring, so the
+ * capsule lengthens and shortens line by line without overshoot or jitter.
+ */
+export const SPRING_LYRIC: Transition = {
+  type: "spring",
+  stiffness: 260,
+  damping: 28,
+  mass: 0.85,
+};
+
 /** Shrinking back: quicker, without the long settle. */
 export const SPRING_COLLAPSE: Transition = {
   type: "tween",
