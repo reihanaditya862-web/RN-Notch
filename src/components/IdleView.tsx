@@ -53,8 +53,9 @@ function DndIndicator() {
  *
  * - No media: clock on the left, battery on the right.
  * - Media playing: waveform and song title, then clock and battery.
- * - A synced lyric line being sung: only the waveform and the line; the
- *   clock and battery fade out and come back for a pause or when it stops.
+ * - Media playing with the Lyrics tab chosen (`lyric` not null): only the
+ *   waveform and the line being sung; the clock and battery are gone until
+ *   the song pauses or another tab is chosen.
  * A live activity sits just before the clock; the capsule widens for it.
  */
 export function IdleView({
@@ -68,9 +69,9 @@ export function IdleView({
   const pill = activity ? <LiveActivityPill activity={activity} /> : null;
   const slotRef = useRef<HTMLSpanElement>(null);
   const pillRef = useRef<HTMLSpanElement>(null);
-  // A line being sung (not a pause between verses): the capsule focuses on
-  // the waveform and the line, and the clock and battery step aside.
-  const isLyricFocus = media !== null && Boolean(lyric);
+  // The lyric pill: the capsule focuses on the waveform and the line (a
+  // pause between verses included), and the clock and battery step aside.
+  const isLyricFocus = media !== null && lyric !== null;
 
   // Measured when the layout around the line can change, not per frame:
   // the room before the line, the right padding, and a live activity.

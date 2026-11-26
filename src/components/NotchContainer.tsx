@@ -326,7 +326,8 @@ export function NotchContainer() {
 
   // The dashboard is as tall as the page on show needs.
   const chosenPage = useNotchStore((store) => store.dashboardPage);
-  const pageHeight = dashboardHeight(currentPage(dashboardPages(settings), chosenPage).id, settings);
+  const activePageId = currentPage(dashboardPages(settings), chosenPage).id;
+  const pageHeight = dashboardHeight(activePageId, settings);
 
   // A recording, the focus timer, a live F1 session or a routine due soon,
   // beside the clock.
@@ -340,12 +341,10 @@ export function NotchContainer() {
   // past 68% of the screen or the window; a longer line scrolls once.
   const [lyricWidth, setLyricWidth] = useState(0);
   const [lyricChrome, setLyricChrome] = useState(0);
-  // While a line is sung the clock and battery step aside, so the capsule
-  // is just the waveform and the line: it lengthens and shortens with every
-  // line, between the plain collapsed width and 68% of the screen.
-  const maxCollapsed = Math.floor(
-    Math.min(window.screen.width * 0.68, window.innerWidth - 24) / Math.max(uiScale, 0.5),
-  );
+  // With the Lyrics tab chosen, the collapsed capsule is just the waveform
+  // and the line being sung (no clock, no battery): it lengthens and
+  // shortens with every line, between the plain collapsed width and 82vw.
+  const maxCollapsed = Math.floor((window.innerWidth * 0.82) / Math.max(uiScale, 0.5));
   const isLyricFocus = state === "idleMedia" && lyricWidth > 0;
   const lyricTarget = isLyricFocus
     ? Math.min(Math.max(lyricWidth, NOTCH_SIZES.idle.width + activityWidth), maxCollapsed)
@@ -420,16 +419,20 @@ export function NotchContainer() {
     settings.custom_accent_hex || settings.theme_preset === "paddock-telemetry" ? accent : NEON_IDLE_COLOR;
   const neonStops = neonGradientStops(livePalette, idleNeon);
 
+  // The collapsed capsule shows the lyric line only while the Lyrics tab is
+  // the one chosen; on any other tab it shows the title, clock and battery.
+  const compactLyric = activePageId === "lyrics" ? lyric : null;
+
   // Width of the collapsed capsule for the line being sung: measured only
-  // when the line changes. Paused, between verses or without lyrics, the
-  // capsule goes back to its usual size.
+  // when the line changes (a pause between verses is a note). Paused or
+  // without synced lyrics, the capsule goes back to its usual size.
   useEffect(() => {
-    if (state !== "idleMedia" || !lyric || lyricChrome === 0) {
+    if (state !== "idleMedia" || compactLyric === null || lyricChrome === 0) {
       setLyricWidth(0);
       return;
     }
-    setLyricWidth(Math.ceil(lyricChrome + textWidth(lyric, ALERT_TITLE_FONT) + 6));
-  }, [state, lyric, lyricChrome]);
+    setLyricWidth(Math.ceil(lyricChrome + textWidth(compactLyric || "\u266A", ALERT_TITLE_FONT) + 6));
+  }, [state, compactLyric, lyricChrome]);
 
   // The theme lives on the document, where the stylesheet can see it.
   useEffect(() => {
@@ -885,7 +888,7 @@ export function NotchContainer() {
         isLyricMarquee={isLyricTooLong}
         media={state === "idleMedia" ? media : null}
         isDndEnabled={settings.dnd_enabled}
-        lyric={lyric}
+        lyric={compactLyric}
       />
     );
 

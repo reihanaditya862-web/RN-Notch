@@ -170,7 +170,7 @@ export function MediaPill({
             className="font-display text-[13px] leading-[18px] font-bold text-notch-primary"
           />
           {lyric !== null ? (
-            <LyricLine text={lyric} className="text-[12px] leading-4 font-medium text-notch-primary/85" />
+            <LyricLine text={lyric} height={16} className="text-[12px] leading-4 font-medium text-notch-primary/85" />
           ) : (
             <TruncatedText
               text={
